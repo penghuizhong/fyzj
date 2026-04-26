@@ -1,0 +1,29 @@
+services:
+  # 宇宙一：Agent 智能制版引擎
+  ai_server:
+    build: .
+    container_name: fyzb_server
+    env_file: [ .env ]
+    environment:
+      POSTGRES_HOST: fyzb_postgres
+    ports:
+      # 打开大门，让宿主机上的 OpenResty 能把前端请求转进来
+      - "8001:8001"
+    networks:
+      - fyzb_network
+
+  # 宇宙二：Celery 工作进程 (它不需要开端口，默默干活就行)
+  celery_worker:
+    build: .
+    container_name: fyzb_celery_worker
+    env_file: [ .env ]
+    environment:
+      POSTGRES_HOST: fyzb_postgres
+      REDIS_URL: redis://fyzb_redis:6379/1
+    networks:
+      - fyzb_network
+    command: celery -A core.celery_app worker --loglevel=info
+
+networks:
+  fyzb_network:
+    external: true

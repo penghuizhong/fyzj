@@ -1,0 +1,58 @@
+# ── 方圆智版：基础设施地基 ──────────────────────────────────────────
+# 运行命令: docker-compose -f compose.infra.yaml up -d
+# ──────────────────────────────────────────────────────────────────
+
+services:
+
+  # PostgreSQL: 核心数据库，支持向量检索 (pgvector)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: fyzb_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # 初始默认数据库，建议在代码中分别连接 db_business 和 db_agent
+      POSTGRES_DB: ${POSTGRES_DB:-fyzj}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # 初始化脚本：首次启动时自动创建 db_agent 等数据库
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - fyzb_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzb_core}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis: 共享缓存与消息中心
+  redis:
+    image: redis:7-alpine
+    container_name: fyzb_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - fyzb_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ── 共享网络：这是联通所有服务的“空气” ────────────────────────────────
+networks:
+  fyzb_network:
+    name: fyzb_network # 强制固定名称，方便应用服务在外部引用
+    driver: bridge
+
+# ── 持久化数据卷：确保数据库重启后数据不丢失 ──────────────────────────
+volumes:
+  postgres_data:
+  redis_data:

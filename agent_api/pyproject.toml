@@ -1,0 +1,102 @@
+[project]
+name = "fangyuan-agent-server"
+version = "0.1.0"
+description = "方圆智版 AI 后端引擎 (FastAPI + LangGraph + LlamaIndex + PostgreSQL)"
+readme = "README.md"
+authors = [{ name = "钟总" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    # ==========================================
+    # 1. 核心 Web 引擎 (FastAPI 体系)
+    # ==========================================
+    "fastapi ~=0.115.5",
+    "uvicorn ~=0.32.1",
+    "pydantic ~=2.11.5",
+    "pydantic-settings ~=2.10.1",
+    "python-dotenv ~=1.0.1",
+    "httpx ~=0.28.0",
+    "pyyaml ~=6.0.2",
+    
+    # ==========================================
+    # 2. 数据库与缓存底层 (极简状态连接)
+    # ==========================================
+    "psycopg[binary,pool] ~=3.2.4",
+    "pgvector ~=0.3.6",
+    "redis >=6.4.0",
+    
+    # ==========================================
+    # 3. AI 工作流编排 (LangChain + LangGraph)
+    # ==========================================
+    "langchain >=1.0.5",
+    "langchain-core >=1.0.0",
+    "langchain-community ~=0.4.1",
+    "langchain-postgres ~=0.0.12",
+    "langgraph >=1.1.0,<1.3.0",
+    "langgraph-checkpoint-postgres ~=2.0.13",
+    "langsmith ~=0.4.0",
+    "langfuse >=2.65.0",
+    "langchain-openai ~=1.0.2",
+    
+    # ==========================================
+    # 4. 专业知识检索 (LlamaIndex)
+    # ==========================================
+    "llama-index ~=0.14.17",
+    "llama-index-embeddings-dashscope ~=0.5.0",
+    "llama-index-vector-stores-postgres ~=0.6.0",
+    "llama-index-readers-file ~=0.5.2",
+    "unstructured >=0.16.0",
+    "unstructured[md] >=0.16",
+    "rapidfuzz ~=3.14.0",
+    
+    # ==========================================
+    # 5. 工具、限流与安全防护 (Agent 验签与异步)
+    # ==========================================
+    "tiktoken >=0.8.0",
+    "slowapi >=0.1.9",
+    "PyJWT[crypto] >=2.8.0",  # 仅用于使用公钥验证 Token (RS256)
+    "celery[redis] >=5.6.3",
+]
+
+# ==========================================
+# 🛠️ 开发辅助工具组 (仅保留测试与 Lint)
+# ==========================================
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+]
+
+# ==========================================
+# 📐 代码规范与测试配置
+# ==========================================
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["I", "U"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.pytest_env]
+OPENAI_API_KEY = "sk-fake-openai-key"
+
+[tool.mypy]
+plugins = "pydantic.mypy"
+# 移除了 exclude = "src/streamlit_admin.py"，因为该文件已不属于此服务
+
+[[tool.mypy.overrides]]
+module = ["numexpr.*", "langchain_mcp_adapters.*"]
+ignore_missing_imports = true

@@ -1,0 +1,17 @@
+default_model: "deepseek-v4-flash"
+providers:
+  dashscope:
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    models:
+      - "qwen-turbo"
+      - "qwen3.6-plus"
+      - "qwen-max"
+      - "qwen-long"
+  deepseek:
+    base_url: "https://api.deepseek.com"
+    models:
+      - "deepseek-chat"
+      - "deepseek-reasoner"
+      - "deepseek-v4-flash"
+      
+

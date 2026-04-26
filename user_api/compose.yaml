@@ -1,0 +1,41 @@
+# compose.yaml
+services:
+  # ── 数据库迁移与种子数据 ─────────────────────────────────
+  # 在 ai_server 启动前运行一次性迁移任务
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: fyzb_migrate
+    command: >
+      bash -c "
+        echo 'Running Alembic migrations...' &&
+        alembic upgrade head &&
+        echo 'Running data seeds...' &&
+        python -m scripts.seed_runner &&
+        echo 'Migration and seeding completed!'
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+    restart: 'no' # 只运行一次，完成后退出
+
+  # ── Celery 工作进程 ─────────────────────────────────────
+  celery_worker:
+    build: .
+    container_name: fyzb_celery_worker
+    env_file: [ .env ]
+    environment:
+      POSTGRES_HOST: fyzb_postgres
+      REDIS_URL: redis://fyzb_redis:6379
+    networks:
+      - fyzb_network
+    command: celery -A core.celery_app worker --loglevel=info
+
+networks:
+  fyzb_network:
+    external: true # <--- 关键：告诉 Docker 这个网络是外面已经建好的

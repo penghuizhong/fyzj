@@ -23,7 +23,7 @@ services:
     networks:
       - fyzb_network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzb_core}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzj}" ]
       interval: 10s
       timeout: 5s
       retries: 5

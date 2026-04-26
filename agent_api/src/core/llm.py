@@ -37,7 +37,7 @@ def get_model(model_name: str = None) -> ChatOpenAI:
     if not api_key_secret:
         raise ValueError(f"未配置环境变量: {api_key_attr}")
 
-    logger.info(f"🤖 初始化 LLM: {model_name} (Provider: {target_provider})")
+    # logger.info(f"🤖 初始化 LLM: {model_name} (Provider: {target_provider})")
 
     # 3. 针对 DeepSeek 系列的特殊处理
     extra_body_params = None

@@ -12,17 +12,18 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # 初始默认数据库，建议在代码中分别连接 db_business 和 db_agent
+      # 初始默认连接库
       POSTGRES_DB: ${POSTGRES_DB:-fyzj}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # 初始化脚本：首次启动时自动创建 db_agent 等数据库
+      # 挂载我们刚刚写的自动化初始化脚本
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - fyzb_network
     healthcheck:
+      # 修复了这里的库名匹配，确保健康检查不报错
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzj}" ]
       interval: 10s
       timeout: 5s
@@ -46,13 +47,13 @@ services:
       timeout: 5s
       retries: 5
 
-# ── 共享网络：这是联通所有服务的“空气” ────────────────────────────────
+# ── 共享网络 ──────────────────────────────────────────────────────
 networks:
   fyzb_network:
-    name: fyzb_network # 强制固定名称，方便应用服务在外部引用
+    name: fyzb_network
     driver: bridge
 
-# ── 持久化数据卷：确保数据库重启后数据不丢失 ──────────────────────────
+# ── 持久化数据卷 ──────────────────────────────────────────────────
 volumes:
   postgres_data:
   redis_data:

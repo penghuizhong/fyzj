@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     JWT_PUBLIC_KEY: SecretStr | None = None
     JWT_ALGORITHM: str = "RS256"
     
+    AUTH_SECRET: SecretStr | None = None  # 用于简单的 HMAC 验证（可选）
+    
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_ANONYMOUS: str = "5/minute"
     RATE_LIMIT_AUTHENTICATED: str = "50/minute"

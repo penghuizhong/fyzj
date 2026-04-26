@@ -5,7 +5,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: docker/Dockerfile.service
+      dockerfile: dockerfile
     container_name: fyzb_migrate
     command: >
       bash -c "

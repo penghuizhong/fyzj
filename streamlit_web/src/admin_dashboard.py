@@ -35,8 +35,23 @@ html, body, [class*="css"] {
     font-family: 'IBM Plex Sans', sans-serif;
 }
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
+/* ── Hide Streamlit chrome — 用 height 折叠而非 visibility，避免子元素继承隐藏 ── */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+/* header 只压缩高度，保留侧边栏展开箭头的点击区域 */
+header[data-testid="stHeader"] {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;   /* 箭头按钮仍可超出渲染 */
+}
+/* 展开/折叠箭头强制可见可点击 */
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 999 !important;
+}
 .block-container { padding: 1.5rem 2rem 3rem; max-width: 1400px; }
 
 /* ── Sidebar ── */
@@ -44,7 +59,10 @@ html, body, [class*="css"] {
     background: #0D0F14;
     border-right: 1px solid #1E2330;
 }
-[data-testid="stSidebar"] * { color: #A8B2C8 !important; }
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div:not([data-testid="stSidebarCollapseButton"]) > div { color: #A8B2C8; }
 [data-testid="stSidebar"] .stRadio label { 
     font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
@@ -576,6 +594,69 @@ elif "🧬  向量知识库" in page:
 
                             if status == "SUCCESS":
                                 st.success("✅ 入库完成！知识库已更新，可前往「切片浏览」验证结果。")
+                                st.markdown("""
+<div id="confetti-host" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:99999;overflow:hidden;"></div>
+<script>
+(function(){
+    var host = document.getElementById('confetti-host');
+    if(!host) return;
+    var colors = ['#4A90E2','#4DB86A','#E0A040','#E05252','#A855F7','#7AB8F5','#F472B6'];
+    var pieces = [];
+    var count = 140;
+    for(var i=0;i<count;i++){
+        var el = document.createElement('div');
+        var size = Math.random()*8+5;
+        var color = colors[Math.floor(Math.random()*colors.length)];
+        var isRect = Math.random()>0.5;
+        el.style.cssText = [
+            'position:absolute',
+            'width:'+(isRect?size*2:size)+'px',
+            'height:'+size+'px',
+            'background:'+color,
+            'border-radius:'+(isRect?'2px':'50%'),
+            'left:'+(Math.random()*100)+'vw',
+            'top:-20px',
+            'opacity:'+( 0.7+Math.random()*0.3),
+        ].join(';');
+        host.appendChild(el);
+        pieces.push({
+            el:el,
+            x: parseFloat(el.style.left),
+            y: -20,
+            vx: (Math.random()-0.5)*3,
+            vy: Math.random()*4+3,
+            rot: Math.random()*360,
+            vrot: (Math.random()-0.5)*8,
+            swing: Math.random()*3,
+            swingSpeed: Math.random()*0.05+0.02,
+            t: Math.random()*Math.PI*2
+        });
+    }
+    var start = null;
+    var duration = 3200;
+    function frame(ts){
+        if(!start) start=ts;
+        var elapsed = ts-start;
+        var alive = false;
+        pieces.forEach(function(p){
+            p.t += p.swingSpeed;
+            p.x += p.vx + Math.sin(p.t)*p.swing;
+            p.y += p.vy;
+            p.vy += 0.12;
+            p.rot += p.vrot;
+            var progress = elapsed/duration;
+            var opacity = p.y < window.innerHeight*0.8 ? 1 : 1-(p.y-window.innerHeight*0.8)/(window.innerHeight*0.2);
+            p.el.style.transform='translate('+p.x+'px,'+p.y+'px) rotate('+p.rot+'deg)';
+            p.el.style.opacity = Math.max(0,opacity);
+            if(p.y < window.innerHeight+40) alive=true;
+        });
+        if(alive && elapsed<6000) requestAnimationFrame(frame);
+        else host.remove();
+    }
+    requestAnimationFrame(frame);
+})();
+</script>
+                                """, unsafe_allow_html=True)
                                 break
                             elif status in ("FAILURE", "REVOKED"):
                                 err_detail = task_result if task_result else "请查看后端日志"
@@ -612,7 +693,7 @@ elif "🧬  向量知识库" in page:
         if not tables:
             st.info("暂无向量表，请先完成入库操作")
         else:
-            bc1, bc2, bc3, bc4 = st.columns([2, 2, 1, 1])
+            bc1, bc2, bc3, bc4, bc5 = st.columns([2, 2, 1, 1, 1])
             with bc1:
                 selected_table = st.selectbox("选择向量表", tables, key="browse_table")
             with bc2:
@@ -621,6 +702,13 @@ elif "🧬  向量知识库" in page:
                 limit = st.selectbox("每页", [10, 20, 50], index=0, key="browse_limit")
             with bc4:
                 page_num = st.number_input("页码", min_value=1, value=1, step=1, key="browse_page")
+            with bc5:
+                view_mode = st.radio(
+                    "视图",
+                    ["详细", "简要"],
+                    horizontal=True,
+                    key="browse_view_mode",
+                )
 
             offset = (page_num - 1) * limit
             params = {
@@ -648,7 +736,9 @@ elif "🧬  向量知识库" in page:
 
                 if not chunks:
                     st.markdown('<div style="text-align:center; color:#4A6080; padding:2rem; font-family:IBM Plex Mono,monospace; font-size:12px;">[ 无匹配切片 ]</div>', unsafe_allow_html=True)
-                else:
+
+                elif view_mode == "详细":
+                    # ── 详细模式：带正文的卡片 ──────────────────────
                     for chunk in chunks:
                         src = chunk.get("source", "未知")
                         pg = chunk.get("page", "—")
@@ -656,7 +746,6 @@ elif "🧬  向量知识库" in page:
                         tok = chunk.get("token_est", 0)
                         cid = chunk.get("id", "")
                         text = chunk.get("text", "")
-
                         st.markdown(f"""
                         <div class="chunk-card">
                             <div class="chunk-meta">
@@ -665,6 +754,37 @@ elif "🧬  向量知识库" in page:
                             <div class="chunk-text">{text[:400]}{"…" if len(text) > 400 else ""}</div>
                         </div>
                         """, unsafe_allow_html=True)
+
+                else:
+                    # ── 简要模式：紧凑表格，每行一个切片 ───────────
+                    header_cols = st.columns([0.8, 2.5, 0.8, 0.8, 0.8, 4])
+                    for col, lbl in zip(header_cols, ["ID", "来源文件", "页码", "字符", "Token", "预览"]):
+                        col.markdown(
+                            f'<div style="font-family:IBM Plex Mono,monospace;font-size:10px;'
+                            f'color:#4A6080;letter-spacing:0.12em;text-transform:uppercase;'
+                            f'padding-bottom:4px;border-bottom:1px solid #1E2330;">{lbl}</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    for chunk in chunks:
+                        src = chunk.get("source", "未知")
+                        pg = chunk.get("page", "—")
+                        char_len = chunk.get("char_len", 0)
+                        tok = chunk.get("token_est", 0)
+                        cid = chunk.get("id", "")
+                        text = chunk.get("text", "")
+                        preview = text[:80].replace("\n", " ")
+                        if len(text) > 80:
+                            preview += "…"
+
+                        row = st.columns([0.8, 2.5, 0.8, 0.8, 0.8, 4])
+                        mono = "font-family:IBM Plex Mono,monospace;font-size:11px;"
+                        row[0].markdown(f'<span style="{mono}color:#4A6080;">{cid[:6]}…</span>', unsafe_allow_html=True)
+                        row[1].markdown(f'<span style="{mono}color:#7AB8F5;">{src}</span>', unsafe_allow_html=True)
+                        row[2].markdown(f'<span style="{mono}color:#4A6080;">{pg}</span>', unsafe_allow_html=True)
+                        row[3].markdown(f'<span style="{mono}color:#A8B2C8;">{char_len}</span>', unsafe_allow_html=True)
+                        row[4].markdown(f'<span style="{mono}color:#A8B2C8;">~{tok}</span>', unsafe_allow_html=True)
+                        row[5].markdown(f'<span style="{mono}color:#6A7A90;">{preview}</span>', unsafe_allow_html=True)
 
                 # 翻页指示
                 total_pages = max(1, (total_filtered + limit - 1) // limit)

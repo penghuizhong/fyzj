@@ -13,5 +13,25 @@ providers:
       - "deepseek-chat"
       - "deepseek-reasoner"
       - "deepseek-v4-flash"
-      
+# config.yaml (方圆智版 · 业务路由配置)
+category_routing:
+  裙子:
+    - skirt
+    - 裙
+    - dress
+  裤子:
+    - pant
+    - 裤
+    - trouser
+  上衣:
+    - top
+    - 上衣
+    - shirt
+    - coat
+  客服话术:
+    - cs
+    - 话术
+    - 客服
+    - 销售
+    - faq
 

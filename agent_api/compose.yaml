@@ -6,6 +6,9 @@ services:
     env_file: [ .env ]
     environment:
       POSTGRES_HOST: fyzb_postgres
+
+    volumes:
+      - ./data:/app/data
     ports:
       # 打开大门，让宿主机上的 OpenResty 能把前端请求转进来
       - "8001:8001"

@@ -13,13 +13,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.routing import APIRoute
 from langchain_core._api import LangChainBetaWarning
 
+# 🌟 新增 JWT 解析库
+from jose import jwt, JWTError
+
+from src.api.routers import vector_admin, files_admin, agent
 from core import settings
 from core.postgres import get_postgres_saver, get_postgres_store
 from agents import get_all_agent_info, load_agent, get_agent
 from langfuse import Langfuse
-
-# 🌟 引入两个路由宇宙
-from api.routers import admin, agent
 
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 logger = logging.getLogger("uvicorn")
@@ -27,12 +28,51 @@ logger = logging.getLogger("uvicorn")
 def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
+
+# ==============================================================================
+# 🛡️ 核心安保：双轨制 Bearer 令牌验证器 (JWT RS256 / Secret)
+# ==============================================================================
 def verify_bearer(
     http_auth: Annotated[HTTPAuthorizationCredentials | None, Depends(HTTPBearer(auto_error=False))],
-) -> None:
-    if settings.AUTH_SECRET:
-        if not http_auth or http_auth.credentials != settings.AUTH_SECRET.get_secret_value():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+) -> dict:
+    """
+    升级版：不仅验证真伪，还会返回解密后的用户信息 payload。
+    供下游路由获取当前请求的用户身份。
+    """
+    # 1. 兜底方案：如果没设公钥，走简单的 Secret 对暗号逻辑
+    if not settings.JWT_PUBLIC_KEY:
+        if settings.AUTH_SECRET:
+            if not http_auth or http_auth.credentials != settings.AUTH_SECRET.get_secret_value():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, 
+                    detail="Invalid Secret Token"
+                )
+            return {"user": "admin", "auth_mode": "secret"}
+        return {"user": "anonymous", "auth_mode": "none"}
+
+    # 2. 核心方案：大厂级 JWT (RS256) 验证
+    if not http_auth:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Missing Authorization Header"
+        )
+
+    try:
+        # 核心解密引擎：使用公钥验证数字签名
+        payload = jwt.decode(
+            http_auth.credentials,
+            settings.JWT_PUBLIC_KEY.get_secret_value(),
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        # 解密成功！payload 里通常包含 {"sub": "user_123", "exp": 171...}
+        return payload
+    except JWTError as e:
+        logger.warning(f"🛡️ JWT 拦截非法请求: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="令牌无效、遭篡改或已过期"
+        )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -79,13 +119,17 @@ async def health_check():
             health_status["langfuse"] = "disconnected"
     return health_status
 
+
 # ==============================================================================
 # 🌟 终极注册：必须放在最后！
-# 这里才是真正的“开门营业”，统一挂载两个子宇宙并开启 Bearer 鉴权保护
+# 这里才是真正的“开门营业”，统一挂载三个子宇宙并开启 Bearer 鉴权保护
 # ==============================================================================
 
 # AI 宇宙：处理对话、流式输出、反馈
 app.include_router(agent.router, dependencies=[Depends(verify_bearer)])
 
-# 管理宇宙：处理入库任务、查询向量切片、监控任务状态
-app.include_router(admin.router, dependencies=[Depends(verify_bearer)])
+# 向量管理宇宙：处理入库任务、查询向量切片、监控任务状态
+app.include_router(vector_admin.router, dependencies=[Depends(verify_bearer)])
+
+# 文件管理宇宙：处理物理源文件的增删改查
+app.include_router(files_admin.router, dependencies=[Depends(verify_bearer)])

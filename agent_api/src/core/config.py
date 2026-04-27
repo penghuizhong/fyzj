@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_ANONYMOUS: str = "5/minute"
     RATE_LIMIT_AUTHENTICATED: str = "50/minute"
+    
+    # ==========================================
+    # 6. 业务路由与知识库配置 (动态加载)
+    # ==========================================
+    CATEGORY_RULES: dict = {}
 
 
     def model_post_init(self, __context: Any) -> None:
@@ -117,6 +122,8 @@ class Settings(BaseSettings):
                     self.AVAILABLE_MODELS = models
 
                     self.DEFAULT_MODEL = data.get("default_model", self.DEFAULT_MODEL)
+                    # 2. 🌟 挂载知识库分类路由规则
+                    self.CATEGORY_RULES = data.get("category_routing", {})
                 logger.info(f"✅ 成功从 {yaml_path} 加载大模型配置")
             except Exception as e:
                 logger.error(f"❌ 加载 config.yaml 失败: {e}")

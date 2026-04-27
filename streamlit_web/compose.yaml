@@ -15,7 +15,7 @@ services:
       - .env
     environment:
       # 🌟 关键：通过容器名直接呼叫后端 API
-      - AGENT_API_URL=http://fyzb_servers:8001
+      - AGENT_API_URL=http://host.docker.internal:8001
     volumes:
       # 挂载宿主机的文档目录，让 Streamlit 能“预检”文件列表
       - ./data:/app/data

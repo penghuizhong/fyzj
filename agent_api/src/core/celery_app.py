@@ -21,11 +21,14 @@ app.conf.update(
     worker_concurrency=settings.CELERY_WORKER_CONCURRENCY,
     result_expires=3600,
     task_always_eager=False,
+    
+    # 🌟 核心修正：显式声明包含任务的具体模块路径
+    # 这样无论您的 __init__.py 是不是空的，Celery 都会强制去读取这个文件
+    imports=["tasks.agent_tasks"],
 )
 
-import tasks
-
+# 删除了原来的 import tasks
 
 @worker_ready.connect
 def on_worker_ready(**kwargs):
-    print("Celery worker is ready!")
+    print("🚀 报告钟总：Celery worker 已就绪，任务队列已加载！")

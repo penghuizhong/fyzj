@@ -2,7 +2,7 @@ services:
   # 宇宙一：Agent 智能制版引擎
   ai_server:
     build: .
-    container_name: fyzb_server
+    container_name: fyzb_servers
     env_file: [ .env ]
     environment:
       POSTGRES_HOST: fyzb_postgres
@@ -20,6 +20,8 @@ services:
     environment:
       POSTGRES_HOST: fyzb_postgres
       REDIS_URL: redis://fyzb_redis:6379/1
+    volumes:
+      - ./data:/app/data
     networks:
       - fyzb_network
     command: celery -A core.celery_app worker --loglevel=info

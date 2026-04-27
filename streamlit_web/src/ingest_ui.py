@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 后端 API 地址，优先读取环境变量，默认指向 Docker 内网的 Agent 服务
-AGENT_API_URL = os.getenv("AGENT_API_URL", "http://fyzb_servers:8001")
+AGENT_API_URL = os.getenv("AGENT_API_URL", "http://fyzb_server:8001")
 
 # 仅仅用于界面展示的占位配置
 ENV_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v3")
@@ -31,7 +31,8 @@ st.set_page_config(
 )
 
 # ─── 全局 CSS（深色科技风格）────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
 /* ── 整体背景 ── */
 html, body, [data-testid="stAppViewContainer"] {
@@ -250,38 +251,43 @@ button[data-testid="stSidebarCollapseButton"] {
     border-radius: 4px;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 EXT_ICONS = {
-    ".pdf":  "📄",
+    ".pdf": "📄",
     ".docx": "📝",
-    ".doc":  "📝",
-    ".md":   "📋",
-    ".txt":  "📃",
+    ".doc": "📝",
+    ".md": "📋",
+    ".txt": "📃",
     ".html": "🌐",
 }
 
 # 🌟 核心改动 2：阶段描述更新为微服务架构的术语
 STAGE_META = [
-    ("01", "⬡", "API Connect",  "连接 Agent 服务"),
-    ("02", "⬡", "Task Submit",  "投递至 Celery 队列"),
-    ("03", "⬡", "Parsing...",   "后台异步切片处理中"),
-    ("04", "⬡", "Vectorizing",  "后台调用 Embedding"),
-    ("05", "⬡", "PG Database",  "后台持久化落盘"),
+    ("01", "⬡", "API Connect", "连接 Agent 服务"),
+    ("02", "⬡", "Task Submit", "投递至 Celery 队列"),
+    ("03", "⬡", "Parsing...", "后台异步切片处理中"),
+    ("04", "⬡", "Vectorizing", "后台调用 Embedding"),
+    ("05", "⬡", "PG Database", "后台持久化落盘"),
 ]
+
 
 def ts():
     return datetime.now().strftime("%H:%M:%S")
+
 
 def fmt_size(b: int) -> str:
     if b < 1024:
         return f"{b} B"
     elif b < 1024**2:
-        return f"{b/1024:.1f} KB"
-    return f"{b/1024**2:.1f} MB"
+        return f"{b / 1024:.1f} KB"
+    return f"{b / 1024**2:.1f} MB"
+
 
 def scan_directory(path_str: str):
     """扫描本地目录，返回支持的文件列表"""
@@ -292,13 +298,16 @@ def scan_directory(path_str: str):
     files = []
     for f in p.rglob("*"):
         if f.is_file() and f.suffix.lower() in exts:
-            files.append({
-                "name": f.name,
-                "path": str(f),
-                "ext":  f.suffix.lower(),
-                "size": f.stat().st_size,
-            })
+            files.append(
+                {
+                    "name": f.name,
+                    "path": str(f),
+                    "ext": f.suffix.lower(),
+                    "size": f.stat().st_size,
+                }
+            )
     return files
+
 
 def render_pipeline(stages_state: dict):
     """渲染 5 阶段流水线卡片"""
@@ -307,9 +316,9 @@ def render_pipeline(stages_state: dict):
         state = stages_state.get(i, "waiting")
         status_text = {
             "waiting": "STANDBY",
-            "active":  "PROCESSING...",
-            "done":    "COMPLETE",
-            "error":   "FAILED",
+            "active": "PROCESSING...",
+            "done": "COMPLETE",
+            "error": "FAILED",
         }.get(state, "STANDBY")
 
         cards_html += f"""
@@ -320,8 +329,9 @@ def render_pipeline(stages_state: dict):
         </div>"""
         if i < len(STAGE_META) - 1:
             cards_html += '<div class="arrow-sep">›</div>'
-    cards_html += '</div>'
+    cards_html += "</div>"
     return cards_html
+
 
 def render_log(lines: list[dict]) -> str:
     html = '<div class="log-terminal">'
@@ -331,8 +341,9 @@ def render_log(lines: list[dict]) -> str:
         html += f'<div class="{css}"><span class="log-ts">[{line["ts"]}]</span>{line["msg"]}</div>'
     if not lines:
         html += '<div class="log-line-dim">// 等待任务启动...</div>'
-    html += '</div>'
+    html += "</div>"
     return html
+
 
 def render_file_list(files: list[dict]) -> str:
     if not files:
@@ -342,63 +353,79 @@ def render_file_list(files: list[dict]) -> str:
         icon = EXT_ICONS.get(f["ext"], "📄")
         html += f"""
         <div class="file-item">
-            <span class="file-ext-badge">{f['ext'].lstrip('.')}</span>
-            <span class="file-name">{icon} {f['name']}</span>
-            <span class="file-size">{fmt_size(f['size'])}</span>
+            <span class="file-ext-badge">{f["ext"].lstrip(".")}</span>
+            <span class="file-name">{icon} {f["name"]}</span>
+            <span class="file-size">{fmt_size(f["size"])}</span>
         </div>"""
     if len(files) > 20:
-        html += f'<div class="log-line-dim" style="font-size:11px;padding:4px 0">// ...及另外 {len(files)-20} 个文件</div>'
+        html += f'<div class="log-line-dim" style="font-size:11px;padding:4px 0">// ...及另外 {len(files) - 20} 个文件</div>'
     return html
 
 
 # ─── 侧边栏：配置面板 ────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("""
+    st.markdown(
+        """
     <div style="padding:16px 0 8px">
         <div style="font-size:16px;font-weight:700;color:#4fc3f7;letter-spacing:0.1em">⬡ 方圆智版</div>
         <div style="font-size:10px;color:#4a5568;letter-spacing:0.2em;margin-top:2px">ASYNC INGESTION CONTROLLER</div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown('<div class="sidebar-section">// 数据源配置</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-section">// 数据源配置</div>', unsafe_allow_html=True
+    )
 
     file_dir = st.text_input(
         "文档目录路径 (容器内路径)",
-        value=st.session_state.get("file_dir", "./data"),
+        value=st.session_state.get("file_dir", "/app/data"),
         placeholder="/app/data",
         key="file_dir",
         label_visibility="visible",
     )
 
-    st.markdown('<div class="sidebar-section">// 微服务网关配置</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-section">// 微服务网关配置</div>', unsafe_allow_html=True
+    )
 
-    st.text_input("后端 Agent API", value=AGENT_API_URL, disabled=True, help="入库指令将投递至此网关")
-    
+    st.text_input(
+        "后端 Agent API",
+        value=AGENT_API_URL,
+        disabled=True,
+        help="入库指令将投递至此网关",
+    )
+
     st.selectbox(
         "Embedding 模型 (后台配置锁定)",
         ["text-embedding-v3", "text-embedding-v2", "text-embedding-v1"],
         index=0 if ENV_EMBEDDING_MODEL == "text-embedding-v3" else 1,
-        disabled=True, 
-        help="纯展示作用，实际模型由后台 settings 决定"
+        disabled=True,
+        help="纯展示作用，实际模型由后台 settings 决定",
     )
 
     st.markdown('<div class="sidebar-section">// 导航</div>', unsafe_allow_html=True)
     st.page_link("pages/chunk_viewer.py", label="◈  切片浏览器", icon="🔍")
 
     st.markdown('<div class="sidebar-section">// 关于</div>', unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(
+        """
     <div style="font-size:11px;color:#4a5568;line-height:1.8">
         Architecture: Asynchronous<br>
         Broker: Redis + Celery<br>
         Backend: FastAPI Server
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 # ─── 主界面 ─────────────────────────────────────────────────────────────────
 
-st.markdown("""
+st.markdown(
+    """
 <div class="hero-header">
     <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
@@ -427,26 +454,36 @@ st.markdown("""
         </a>
     </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # 两列布局
 col_left, col_right = st.columns([3, 2], gap="large")
 
 with col_left:
     st.markdown("### 📡 Pipeline Status")
-    
+
     if "stages_state" not in st.session_state:
         st.session_state.stages_state = {i: "waiting" for i in range(5)}
-    
+
     pipeline_ph = st.empty()
-    pipeline_ph.markdown(render_pipeline(st.session_state.stages_state), unsafe_allow_html=True)
+    pipeline_ph.markdown(
+        render_pipeline(st.session_state.stages_state), unsafe_allow_html=True
+    )
 
     st.markdown("### 💻 System Log")
     log_ph = st.empty()
-    
+
     if "logs" not in st.session_state:
-        st.session_state.logs = [{"ts": ts(), "msg": "UI 遥控器准备就绪。请扫描目录并点击 START INGEST。", "level": "dim"}]
-        
+        st.session_state.logs = [
+            {
+                "ts": ts(),
+                "msg": "UI 遥控器准备就绪。请扫描目录并点击 START INGEST。",
+                "level": "dim",
+            }
+        ]
+
     log_ph.markdown(render_log(st.session_state.logs), unsafe_allow_html=True)
 
 with col_right:
@@ -456,7 +493,9 @@ with col_right:
     with scan_col1:
         do_scan = st.button("⬡ SCAN DIR", use_container_width=True)
     with scan_col2:
-        do_ingest = st.button("⬡ START INGEST", type="primary", use_container_width=True)
+        do_ingest = st.button(
+            "⬡ START INGEST", type="primary", use_container_width=True
+        )
 
     file_list_ph = st.empty()
 
@@ -471,27 +510,37 @@ with col_right:
         else:
             st.warning("⚠ 未发现支持的文件，请确认后台 Celery 容器内该路径也存在文件")
 
-    file_list_ph.markdown(render_file_list(st.session_state.scanned_files), unsafe_allow_html=True)
+    file_list_ph.markdown(
+        render_file_list(st.session_state.scanned_files), unsafe_allow_html=True
+    )
 
     st.markdown("### ⬡ Execution Info")
-    st.markdown("""
+    st.markdown(
+        """
     <div style="font-size:12px;line-height:2;color:#a0aec0; background: #0e1520; padding: 12px; border-radius: 6px; border: 1px solid #1e2a3a;">
         ✓ 此界面仅作为<b>遥控器</b>，实际计算将卸载至 <code>celery_worker</code> <br>
         ✓ 进度通过 <b>HTTP 轮询</b> 后台 API 获取，绝不阻塞前台渲染 <br>
         ✓ 即使刷新或关闭本页面，后台任务依然会继续执行至落盘
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 # ─── ✨ 核心改动 3：彻底的异步任务投递与轮询逻辑 ───────────────────────────
+
 
 def add_log(msg, level="info"):
     st.session_state.logs.append({"ts": ts(), "msg": msg, "level": level})
     log_ph.markdown(render_log(st.session_state.logs), unsafe_allow_html=True)
 
+
 def update_stage(idx, status):
     st.session_state.stages_state[idx] = status
-    pipeline_ph.markdown(render_pipeline(st.session_state.stages_state), unsafe_allow_html=True)
+    pipeline_ph.markdown(
+        render_pipeline(st.session_state.stages_state), unsafe_allow_html=True
+    )
+
 
 if do_ingest:
     if not st.session_state.file_dir:
@@ -501,37 +550,39 @@ if do_ingest:
         add_log(f"开始连接微服务网关: {AGENT_API_URL}", "info")
         update_stage(0, "done")
         update_stage(1, "active")
-        
+
         try:
             # 1. 提交任务到 FastAPI
             api_endpoint = f"{AGENT_API_URL}/api/admin/ingest"
             payload = {"directory_path": st.session_state.file_dir}
-            
+
             add_log("正在投递解析指令至 Celery 队列...", "dim")
             response = requests.post(api_endpoint, json=payload, timeout=10)
             response.raise_for_status()
-            
+
             task_data = response.json()
             task_id = task_data.get("task_id")
-            
+
             if not task_id:
                 raise ValueError("后台未返回 Task ID")
-            
+
             add_log(f"✅ 任务投递成功！Broker 分配 Task ID: {task_id}", "success")
             update_stage(1, "done")
             update_stage(2, "active")
             update_stage(3, "active")
             update_stage(4, "active")
-            
+
             # 2. 优雅轮询状态
-            with st.spinner("🚀 任务已进入后台流水线... 正在通过轮询获取最新进度。此过程可能耗时几分钟。"):
+            with st.spinner(
+                "🚀 任务已进入后台流水线... 正在通过轮询获取最新进度。此过程可能耗时几分钟。"
+            ):
                 status_url = f"{AGENT_API_URL}/api/admin/task_status/{task_id}"
-                
+
                 while True:
                     status_res = requests.get(status_url, timeout=5)
                     status_data = status_res.json()
                     current_status = status_data.get("status", "UNKNOWN")
-                    
+
                     if current_status == "SUCCESS":
                         update_stage(2, "done")
                         update_stage(3, "done")
@@ -539,19 +590,20 @@ if do_ingest:
                         add_log("🎉 后台任务汇报：入库流水线完美收官！", "success")
                         st.balloons()
                         break
-                        
+
                     elif current_status == "FAILURE":
                         error_detail = status_data.get("result", "未知后台错误")
                         raise Exception(f"Celery 任务在执行时崩溃: {error_detail}")
-                        
+
                     elif current_status == "STARTED":
                         # 可以在终端随便打点 log 表示它还活着
-                        pass 
-                    
+                        pass
+
                     # 轮询间隔：3秒
                     time.sleep(3)
-            
-            st.markdown("""
+
+            st.markdown(
+                """
             <div style="
                 margin-top: 20px;
                 background: #0a1a0f;
@@ -586,11 +638,16 @@ if do_ingest:
                     white-space: nowrap;
                 ">◈ 去校验切片 →</a>
             </div>
-            """, unsafe_allow_html=True)
-            
+            """,
+                unsafe_allow_html=True,
+            )
+
         except requests.exceptions.ConnectionError:
             update_stage(1, "error")
-            add_log("❌ 无法连接到 FastAPI 服务，请检查 AGENT_API_URL 或确认后端已启动", "error")
+            add_log(
+                "❌ 无法连接到 FastAPI 服务，请检查 AGENT_API_URL 或确认后端已启动",
+                "error",
+            )
             st.error("无法投递任务：连接后端服务失败。")
         except Exception as e:
             update_stage(4, "error")

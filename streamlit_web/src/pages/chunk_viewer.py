@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 # ─── 🌟 核心改动 1：只认 API 环境变量，不碰数据库 ───
 load_dotenv()
-AGENT_API_URL = os.getenv("AGENT_API_URL", "http://fyzb_servers:8001")
+AGENT_API_URL = os.getenv("AGENT_API_URL", "http://fyzb_server:8001")
 
 # ─── 页面配置 ────────────────────────────────────────────────────────────────
 st.set_page_config(

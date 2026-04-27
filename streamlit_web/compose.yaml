@@ -3,26 +3,16 @@
 # ==============================================================================
 
 services:
-  streamlit_admin:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: fyzb_streamlit_admin
+  streamlit:
+    build: .
     restart: unless-stopped
+    container_name: streamlit
     ports:
       - "8501:8501"
     env_file:
       - .env
-    environment:
-      # 🌟 关键：通过容器名直接呼叫后端 API
-      - AGENT_API_URL=http://host.docker.internal:8001
-    volumes:
-      # 挂载宿主机的文档目录，让 Streamlit 能“预检”文件列表
-      - ./data:/app/data
-      # 开发时开启源码同步（可选）
-      - ./src:/app/src
     networks:
-      - fyzb_network
+      - network
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
       interval: 10s
@@ -30,5 +20,5 @@ services:
       retries: 3
 
 networks:
-  fyzb_network:
+  network:
     external: true # 引用基础设施定义的外部网络

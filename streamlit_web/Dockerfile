@@ -9,10 +9,17 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir uv
+
+# 设置 uv 安装到系统 Python（不是虚拟环境）
+ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
+
 # 复制依赖文件并安装
 # 注意：现在的依赖仅需 requests, streamlit 和 python-dotenv
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
 
 # 复制源代码
 COPY . .
@@ -21,5 +28,4 @@ COPY . .
 EXPOSE 8501
 
 # 启动命令
-# 建议以 ingest_ui.py 为主入口
-CMD ["streamlit", "run", "src/ingest_ui.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "src/admin_dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]

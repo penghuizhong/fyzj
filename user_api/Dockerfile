@@ -16,25 +16,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # 复制项目代码
-COPY src/agents/ ./agents/
-COPY src/core/ ./core/
-COPY src/memory/ ./memory/
-COPY src/schema/ ./schema/
-COPY src/service/ ./service/
-COPY src/scripts/ ./scripts/
-COPY src/tasks/ ./tasks/
-COPY src/models/ ./models/
-COPY src/run_service.py .
-COPY ./config.yaml .
-
-# 复制数据文件
-COPY data/ ./data/
-
-# 复制 alembic 配置（用于数据库迁移）
-COPY alembic.ini .
-COPY alembic/ ./alembic/
-
-EXPOSE 8000
-
-# 直接用 python，不需要 uv run（因为已装到系统级）
-CMD ["python", "run_service.py"]
+COPY . .

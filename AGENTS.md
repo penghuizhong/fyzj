@@ -6,12 +6,12 @@
 
 Multi-service architecture with 4 distinct services:
 
-| Service | Tech | Port | Purpose |
-|---------|------|------|---------|
-| `agent_api/` | Python 3.12 + FastAPI + LangGraph | 8001 | AI agent engine (RAG, chatbot, Celery workers) |
-| `user_api/` | Python 3.12 + FastAPI | 8000 | User/course management API |
-| `steamlit_web/` | Python 3.12 + Streamlit | N/A | Admin UI for content ingestion |
-| `web/` | Next.js 16 + React 19 | 3000 | Frontend web application |
+| Service         | Tech                              | Port | Purpose                                        |
+| --------------- | --------------------------------- | ---- | ---------------------------------------------- |
+| `agent_api/`    | Python 3.12 + FastAPI + LangGraph | 8001 | AI agent engine (RAG, chatbot, Celery workers) |
+| `user_api/`     | Python 3.12 + FastAPI             | 8000 | User/course management API                     |
+| `steamlit_web/` | Python 3.12 + Streamlit           | N/A  | Admin UI for content ingestion                 |
+| `web/`          | Next.js 16 + React 19             | 3000 | Frontend web application                       |
 
 Infrastructure (Docker Compose):
 - PostgreSQL 16 + pgvector (port 5432) - Shared database with logical separation
@@ -146,7 +146,7 @@ All Python services use `uv` for dependency management:
 - `pyproject.toml` + `uv.lock` for dependencies
 - Multi-stage builds with cache mounts
 - System-level Python (no venv in containers)
-- External network `fyzb_network` shared across services
+- External network `network` shared across services
 
 **Build args:**
 ```dockerfile
@@ -178,12 +178,12 @@ DEEPSEEK_API_KEY=...
 OPENAI_API_KEY=...
 
 # Database
-POSTGRES_HOST=fyzb_postgres
+POSTGRES_HOST=postgres
 POSTGRES_DB=db_agent
 
 # Redis
-REDIS_URL=redis://fyzb_redis:6379/1
-CELERY_BROKER_URL=redis://fyzb_redis:6379/1
+REDIS_URL=redis://redis:6379/1
+CELERY_BROKER_URL=redis://redis:6379/1
 
 # Security
 JWT_PUBLIC_KEY="..."  # RS256 public key (single line with \n)
@@ -195,20 +195,20 @@ RATE_LIMIT_ENABLED=true
 
 ```bash
 # View logs
-docker logs -f fyzb_server
-docker logs -f fyzb_celery_worker
+docker logs -f server
+docker logs -f celery_worker
 
 # Restart services
 docker compose -f agent_api/compose.yaml restart
 
 # Database shell
-docker exec -it fyzb_postgres psql -U postgres -d db_agent
+docker exec -it postgres psql -U postgres -d db_agent
 
 # Redis CLI
-docker exec -it fyzb_redis redis-cli -n 1
+docker exec -it redis redis-cli -n 1
 
 # Check Celery workers
-docker exec fyzb_celery_worker celery -A core.celery_app inspect active
+docker exec celery_worker celery -A core.celery_app inspect active
 ```
 
 ## Code Quality
@@ -226,7 +226,7 @@ docker exec fyzb_celery_worker celery -A core.celery_app inspect active
 ## Important Notes
 
 - **Infrastructure first:** Always start `compose.infra.yaml` before application services
-- **Network sharing:** Services communicate via `fyzb_network` (external Docker network)
+- **Network sharing:** Services communicate via `network` (external Docker network)
 - **Agent loading:** Lazy agents require explicit `load_agent()` call before use
 - **Safeguard:** All user-facing agents must route through prompt injection check
 - **Windows compatibility:** `main.py` includes `WindowsSelectorEventLoopPolicy` patch for asyncio

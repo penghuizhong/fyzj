@@ -5,7 +5,7 @@ from sqlalchemy import Column, DateTime, String, Table, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from core.database import Base
+from user_api.src.core.database import Base
 
 
 # Association table for user roles

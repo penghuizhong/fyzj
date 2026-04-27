@@ -7,7 +7,7 @@ services:
   # PostgreSQL: 核心数据库，支持向量检索 (pgvector)
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: fyzb_postgres
+    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -21,7 +21,7 @@ services:
       # 挂载我们刚刚写的自动化初始化脚本
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
-      - fyzb_network
+      - network
     healthcheck:
       # 修复了这里的库名匹配，确保健康检查不报错
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzj}" ]
@@ -32,7 +32,7 @@ services:
   # Redis: 共享缓存与消息中心
   redis:
     image: redis:7-alpine
-    container_name: fyzb_redis
+    container_name: redis
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning
     ports:
@@ -40,7 +40,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - fyzb_network
+      - network
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -49,8 +49,8 @@ services:
 
 # ── 共享网络 ──────────────────────────────────────────────────────
 networks:
-  fyzb_network:
-    name: fyzb_network
+  network:
+    name: network
     driver: bridge
 
 # ── 持久化数据卷 ──────────────────────────────────────────────────

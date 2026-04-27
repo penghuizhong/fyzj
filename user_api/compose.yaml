@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: dockerfile
-    container_name: fyzb_migrate
+    container_name: migrate
     command: >
       bash -c "
         echo 'Running Alembic migrations...' &&
@@ -27,15 +27,15 @@ services:
   # ── Celery 工作进程 ─────────────────────────────────────
   celery_worker:
     build: .
-    container_name: fyzb_celery_worker
+    container_name: celery-worker
     env_file: [ .env ]
     environment:
-      POSTGRES_HOST: fyzb_postgres
-      REDIS_URL: redis://fyzb_redis:6379
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379
     networks:
-      - fyzb_network
+      - network
     command: celery -A core.celery_app worker --loglevel=info
 
 networks:
-  fyzb_network:
+  network:
     external: true # <--- 关键：告诉 Docker 这个网络是外面已经建好的

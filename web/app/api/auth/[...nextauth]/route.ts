@@ -9,9 +9,9 @@ const config: NextAuthConfig = {
       type: "oauth",
       authorization: {
         url: "http://localhost:8000/login/oauth/authorize",
-        params: { 
+        params: {
           scope: "openid profile email",
-        } 
+        }
       },
       token: {
         url: "http://localhost:8000/api/login/oauth/access_token",

@@ -1,6 +1,6 @@
 "use client"
 
-import { SessionProvider, signIn, signOut, useSession } from "next-auth/react"
+import { SessionProvider, signOut, useSession } from "next-auth/react"
 import {
   createContext,
   useContext,
@@ -8,6 +8,7 @@ import {
   useEffect,
   ReactNode,
 } from "react"
+import { apiClient, setUnauthorizedHandler } from "@/lib/api"
 
 interface AuthContextType {
   user: any | null
@@ -28,6 +29,22 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [authModalView, setAuthModalView] = useState<"login" | "register">("login")
 
+  useEffect(() => {
+    if (session?.accessToken) {
+      apiClient.setTokens(session.accessToken, session.refreshToken ?? "")
+    } else {
+      apiClient.clearTokens()
+    }
+  }, [session])
+
+  // 注册全局401处理器，当API返回401时自动打开登录弹窗
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      showAuthModal("login")
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
+
   const isLoading = status === "loading"
   const isAuthenticated = status === "authenticated"
   const user = session?.user || null
@@ -42,11 +59,12 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
   }
 
   const login = async () => {
-    await signIn("casdoor")
+    showAuthModal("login")
   }
 
   const logout = () => {
     signOut()
+    apiClient.clearTokens()
   }
 
   return (

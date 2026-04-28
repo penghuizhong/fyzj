@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { useAuth } from "@/lib/auth"; // 1. 引入您的权限大脑
+import { useAuth } from "@/lib/auth"; // 引入我们瘦身后的全新权限大脑
 import {
     Plus, Monitor, Folder, Settings, History,
     ArrowUpCircle, Bell, PanelLeftClose, PanelLeftOpen,
@@ -15,19 +15,19 @@ export default function Sidebar() {
     const [mounted, setMounted] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
 
-    // 2. 从 AuthContext 获取真实的用户状态和操作
-    const { user, isAuthenticated, logout, showAuthModal } = useAuth();
+    // 1. 核心修改：把原来的 showAuthModal 换成直接召唤 Casdoor 的 login
+    const { user, isAuthenticated, logout, login } = useAuth();
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    // 处理头像区域点击逻辑
+    // 2. 核心修改：点击事件极简处理
     const handleUserAreaClick = () => {
         if (!isAuthenticated) {
-            showAuthModal("login"); // 没登录就弹窗
+            login(); // 没登录，一键跳转到 Casdoor
         } else {
-            setShowUserMenu(!showUserMenu); // 登录了就开关菜单
+            setShowUserMenu(!showUserMenu); // 登录了，开关退出菜单
         }
     };
 
@@ -77,7 +77,7 @@ export default function Sidebar() {
             {/* 底部功能区 */}
             <div className="p-3 border-t border-zinc-800 flex flex-col gap-2 relative">
 
-                {/* 3. 动态用户退出菜单 (仅在展开且登录时显示) */}
+                {/* 动态用户退出菜单 (仅在展开且登录时显示) */}
                 {showUserMenu && !isCollapsed && isAuthenticated && (
                     <div className="absolute bottom-[calc(100%+8px)] left-3 w-[calc(100%-24px)] bg-[#262626] border border-white/10 rounded-xl p-1 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
                         <div className="px-3 py-2 border-b border-white/5 mb-1 text-xs text-zinc-500 uppercase tracking-wider font-bold">
@@ -107,18 +107,19 @@ export default function Sidebar() {
                 <div className={`flex items-center mt-2 ${isCollapsed ? "justify-center flex-col gap-3" : "justify-between gap-2"
                     }`}>
 
-                    {/* 4. 动态头像部分 */}
                     <button
                         onClick={handleUserAreaClick}
-                        className="flex items-center gap-2 hover:bg-zinc-800 p-1 -ml-1 rounded-lg transition-colors group text-left"
+                        className="flex items-center gap-2 hover:bg-zinc-800 p-1 -ml-1 rounded-lg transition-colors group text-left max-w-[120px]"
                     >
                         <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm transition-all ${isAuthenticated ? "bg-blue-600 group-hover:bg-blue-500" : "bg-zinc-700 group-hover:bg-zinc-600"
                             }`}>
-                            {isAuthenticated ? user?.username.charAt(0).toUpperCase() : <UserCircle size={18} />}
+                            {/* 3. 核心修改：安全取首字母，username 换成 name，加终极兜底 "方" */}
+                            {isAuthenticated ? (user?.name?.charAt(0)?.toUpperCase() || "方") : <UserCircle size={18} />}
                         </div>
                         {!isCollapsed && (
-                            <span className="text-sm text-zinc-300 font-medium truncate max-w-[80px]">
-                                {isAuthenticated ? user?.username : "点击登录"}
+                            <span className="text-sm text-zinc-300 font-medium truncate">
+                                {/* 4. 核心修改：username 换成 name */}
+                                {isAuthenticated ? (user?.name || "未知用户") : "点击登录"}
                             </span>
                         )}
                     </button>

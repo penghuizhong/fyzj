@@ -3,7 +3,7 @@
 import { useAuth } from "@/lib/auth"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { signIn } from "next-auth/react" // 引入 Auth.js 的绝招
+import { signIn } from "next-auth/react"
 
 export function AuthModal() {
   const { isAuthModalOpen, hideAuthModal } = useAuth()
@@ -21,10 +21,9 @@ export function AuthModal() {
           </p>
         </DialogHeader>
 
-        {/* 核心改动：把复杂的表单，变成一个直接跳往 Casdoor 的大按钮 */}
         <div className="space-y-4">
           <Button
-            onClick={() => signIn("casdoor")} // 一键呼叫 Casdoor 托管页
+            onClick={() => signIn("casdoor")}
             className="w-full bg-primary text-primary-foreground hover:opacity-90 rounded-xl py-6 text-base font-semibold transition-all active:scale-[0.98]"
           >
             登录 / 注册

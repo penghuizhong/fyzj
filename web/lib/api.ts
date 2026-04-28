@@ -1,5 +1,11 @@
-// lib/api.ts
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
+// 全局401处理器，由AuthProvider设置
+let globalUnauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  globalUnauthorizedHandler = handler
+}
 
 export interface UserInput {
   message: string
@@ -75,47 +81,26 @@ export interface CourseListResponse {
 
 class ApiClient {
   private baseUrl: string
-  private accessToken: string | null
-  private refreshToken: string | null
-  private refreshPromise: Promise<TokenResponse> | null = null
+  private accessToken: string | null = null
+  private refreshToken: string | null = null
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl
-    this.accessToken = null
-    this.refreshToken = null
   }
 
   setTokens(accessToken: string, refreshToken: string): void {
     this.accessToken = accessToken
     this.refreshToken = refreshToken
-    if (typeof window !== "undefined") {
-      localStorage.setItem("access_token", accessToken)
-      localStorage.setItem("refresh_token", refreshToken)
-    }
   }
 
   clearTokens(): void {
     this.accessToken = null
     this.refreshToken = null
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token")
-      localStorage.removeItem("refresh_token")
-    }
-  }
-
-  loadTokens(): boolean {
-    if (typeof window !== "undefined") {
-      this.accessToken = localStorage.getItem("access_token")
-      this.refreshToken = localStorage.getItem("refresh_token")
-      return !!this.accessToken
-    }
-    return false
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {},
-    retry = true
+    options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
     const headers: Record<string, string> = {
@@ -132,18 +117,9 @@ class ApiClient {
       headers,
     })
 
-    if (response.status === 401 && retry && this.refreshToken) {
-      try {
-        await this.performRefresh()
-        return this.request(endpoint, options, false)
-      } catch {
-        this.clearTokens()
-        throw new Error("Session expired. Please login again.")
-      }
-    }
-
     if (response.status === 401) {
-      throw new Error("Unauthorized")
+      globalUnauthorizedHandler?.()
+      return new Promise(() => { }) as Promise<T>
     }
 
     if (!response.ok) {
@@ -152,62 +128,6 @@ class ApiClient {
     }
 
     return response.json()
-  }
-
-  private async performRefresh(): Promise<TokenResponse> {
-    if (this.refreshPromise) {
-      return this.refreshPromise
-    }
-
-    this.refreshPromise = (async () => {
-      try {
-        if (!this.refreshToken) {
-          throw new Error("No refresh token available")
-        }
-        const data = await this.request<TokenResponse>("/auth/refresh", {
-          method: "POST",
-          body: JSON.stringify({ refresh_token: this.refreshToken }),
-        }, false)
-        this.setTokens(data.access_token, data.refresh_token)
-        return data
-      } finally {
-        this.refreshPromise = null
-      }
-    })()
-
-    return this.refreshPromise
-  }
-
-  async login(username: string, password: string): Promise<TokenResponse> {
-    const data = await this.request<TokenResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    })
-    this.setTokens(data.access_token, data.refresh_token)
-    return data
-  }
-
-  async register(
-    username: string,
-    password: string,
-    email?: string
-  ): Promise<UserResponse> {
-    return this.request<UserResponse>("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ username, ...(email ? { email } : {}), password }),
-    })
-  }
-
-  async doRefreshToken(): Promise<TokenResponse> {
-    if (!this.refreshToken) {
-      throw new Error("No refresh token available")
-    }
-    const data = await this.request<TokenResponse>("/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: this.refreshToken }),
-    })
-    this.setTokens(data.access_token, data.refresh_token)
-    return data
   }
 
   async getInfo(): Promise<ServiceMetadata> {
@@ -251,6 +171,11 @@ class ApiClient {
       body: JSON.stringify(input),
     })
 
+    if (response.status === 401) {
+      globalUnauthorizedHandler?.()
+      return
+    }
+
     if (!response.ok) {
       throw new Error(`Stream error: ${response.status}`)
     }
@@ -288,7 +213,6 @@ class ApiClient {
                 yield { type: 'error', content: parsed.content } as StreamEvent
               }
             } catch {
-              // Ignore malformed JSON
             }
           }
         }

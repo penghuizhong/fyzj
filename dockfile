@@ -1,4 +1,4 @@
 FROM pgvector/pgvector:pg16
 
 # 复制 SQL 文件即可，Postgres 会自动执行它
-COPY ./postgres-init/01-init-dbs.sql /docker-entrypoint-initdb.d/
+COPY postgres-init/ /docker-entrypoint-initdb.d/

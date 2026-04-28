@@ -1,10 +1,10 @@
-# ── 方圆智版：基础设施地基 ──────────────────────────────────────────
+# ── 方圆智版：基础设施地基 (含鉴权总闸) ──────────────────────────────
 # 运行命令: docker-compose -f compose.infra.yaml up -d
 # ──────────────────────────────────────────────────────────────────
 
 services:
 
-  # PostgreSQL: 核心数据库，支持向量检索 (pgvector)
+  # 1. PostgreSQL: 核心数据库 (由 Casdoor 与业务 Agent 共享)
   postgres:
     image: pgvector/pgvector:pg16
     container_name: postgres
@@ -12,24 +12,21 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # 初始默认连接库
       POSTGRES_DB: ${POSTGRES_DB:-fyzj}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # 挂载我们刚刚写的自动化初始化脚本
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - network
     healthcheck:
-      # 修复了这里的库名匹配，确保健康检查不报错
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fyzj}" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis: 共享缓存与消息中心
+  # 2. Redis: 共享缓存
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -46,6 +43,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 3. Casdoor: 身份鉴权总闸 (新增)
+  casdoor:
+    image: casbin/casdoor:latest
+    container_name: casdoor
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      RUN_MODE: dev
+      driverName: postgres
+      # 关键：通过容器名 'postgres' 直连，并在同一个实例下创建名为 'casdoor' 的库
+      dataSourceName: "user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} host=postgres port=5432 sslmode=disable dbname=casdoor"
+    networks:
+      - network
+    depends_on:
+      postgres:
+        condition: service_healthy # 只有数据库健康检查通过，才启动鉴权中心
 
 # ── 共享网络 ──────────────────────────────────────────────────────
 networks:

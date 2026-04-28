@@ -203,7 +203,7 @@ def ingest_with_llama_index(file_dir: str) -> int:
         port=str(settings.POSTGRES_PORT),
         database=settings.POSTGRES_DB,
         user=settings.POSTGRES_USER,
-        password=db_password,
+        password=settings.POSTGRES_PASSWORD.get_secret_value(),
         table_name=settings.TABLE_NAME_PREFIX,
         embed_dim=1024,
         connection_string=sync_connection_string

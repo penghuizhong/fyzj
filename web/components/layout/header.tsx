@@ -27,7 +27,7 @@ export function Header() {
                 <NotificationBanner />
             </div>
 
-            <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-2">
+            {/* <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-2">
                 {mounted && (
                     <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                         className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
@@ -49,7 +49,7 @@ export function Header() {
                         <UserCircle size={18} className="mr-1" /> 登录
                     </Button>
                 )}
-            </div>
+            </div> */}
         </div>
     )
 }

@@ -7,16 +7,23 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X } from "lucide-react"
+import { useAuth } from "@/lib/auth"
 
 export function GlobalChatShell() {
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [input, setInput] = useState("")
     const [isStreaming, setIsStreaming] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
+    const { isAuthenticated, showAuthModal } = useAuth()
 
     useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
     const handleSend = async () => {
+        if (!isAuthenticated) {
+            showAuthModal('login')
+            return
+        }
+
         if (!input.trim() || isStreaming) return
         const userMsg = input; setInput(""); setIsStreaming(true)
 
@@ -27,9 +34,8 @@ export function GlobalChatShell() {
             // 2. 调用您 apiClient 里的 stream 方法
             const stream = apiClient.stream({
                 message: userMsg,
-                stream_tokens: true,
-                agent_id: "rag-assistant" // 这里对应您后端的智能体ID
-            })
+                stream_tokens: true
+            }, "rag-assistant")
 
             let fullAIContent = ""
             for await (const event of stream) {

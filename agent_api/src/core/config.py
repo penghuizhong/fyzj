@@ -75,9 +75,14 @@ class Settings(BaseSettings):
     # ==========================================
     # 5. 安全防护与鉴权 (验证机模式)
     # ==========================================
-    # Agent 只验证，不签发。使用公钥进行 RS256 解密（或者共享 Secret）
-    JWT_PUBLIC_KEY: SecretStr | None = None
+    # Casdoor
     JWT_ALGORITHM: str = "RS256"
+    CASDOOR_CLIENT_ID: str | None = None   
+    CASDOOR_JWKS_URL: str | None = None
+
+
+    # CORS（Next.js 前端地址）
+    CORS_ORIGINS: str | None = None
     
     AUTH_SECRET: SecretStr | None = None  # 用于简单的 HMAC 验证（可选）
     

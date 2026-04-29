@@ -146,7 +146,7 @@ class ApiClient {
     input: UserInput,
     agentId: string = "rag-assistant"
   ): Promise<ChatMessage> {
-    return this.request<ChatMessage>(`/${agentId}/invoke`, {
+    return this.request<ChatMessage>(`/api/agent/${agentId}/invoke`, {
       method: "POST",
       body: JSON.stringify(input),
     })
@@ -156,7 +156,7 @@ class ApiClient {
     input: StreamInput,
     agentId: string = "rag-assistant"
   ): AsyncGenerator<StreamEvent, void, unknown> {
-    const url = `${this.baseUrl}/${agentId}/stream`
+    const url = `${this.baseUrl}/api/agent/${agentId}/stream`
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     }

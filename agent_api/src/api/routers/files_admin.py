@@ -5,7 +5,6 @@
 import os
 import shutil
 import logging
-from typing import List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from pydantic import BaseModel
 

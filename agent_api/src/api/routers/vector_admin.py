@@ -10,7 +10,6 @@ import asyncpg
 
 from core.postgres import get_postgres_connection_string
 from tasks.agent_tasks import ingest_knowledge_base_task
-# from core.config import settings  # 如果需要可以保留鉴权相关引入
 
 logger = logging.getLogger(__name__)
 

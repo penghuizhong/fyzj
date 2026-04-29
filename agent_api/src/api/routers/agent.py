@@ -3,16 +3,12 @@ import json
 import logging
 import warnings
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from langchain_core._api import LangChainBetaWarning
 from langchain_core.messages import AIMessage, AIMessageChunk, AnyMessage, HumanMessage, ToolMessage
@@ -24,9 +20,8 @@ from langfuse.langchain import CallbackHandler  # type: ignore[import-untyped]
 
 from langgraph.types import Command, Interrupt
 
-from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
+from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info
 from core import settings
-from core.postgres import get_postgres_saver, get_postgres_store
 
 from schema import (
     ChatHistory,
@@ -53,56 +48,7 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
 
-def verify_bearer(
-    http_auth: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(HTTPBearer(description="Please provide AUTH_SECRET api key.", auto_error=False)),
-    ],
-) -> None:
-    if not settings.AUTH_SECRET:
-        return
-    auth_secret = settings.AUTH_SECRET.get_secret_value()
-    if not http_auth or http_auth.credentials != auth_secret:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    try:
-        async with get_postgres_saver() as saver, get_postgres_store() as store:
-            if hasattr(saver, "setup"):  # ignore: union-attr
-                await saver.setup()
-            if hasattr(store, "setup"):  # ignore: union-attr
-                await store.setup()
-
-            agents = get_all_agent_info()
-            for a in agents:
-                try:
-                    await load_agent(a.key)
-                    logger.info(f"Agent loaded: {a.key}")
-                except Exception as e:
-                    logger.error(f"Failed to load agent {a.key}: {e}")
-
-                agent = get_agent(a.key)
-                agent.checkpointer = saver
-                agent.store = store
-            yield
-    except Exception as e:
-        logger.error(f"Error during database/store/agents initialization: {e}")
-        raise
-
-
-app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_unique_id)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-router = APIRouter(dependencies=[Depends(verify_bearer)])
+router = APIRouter(prefix="/api/agent", tags=["一个agent 相关接口"])
 
 @router.get("/info")
 async def info() -> ServiceMetadata:
@@ -351,6 +297,3 @@ async def history(input: ChatHistoryInput) -> ChatHistory:
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error")
-
-
-app.include_router(router)

@@ -1,94 +1,86 @@
 "use client"
 
-import { SessionProvider, signOut, useSession } from "next-auth/react"
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  ReactNode,
-} from "react"
+import { SessionProvider, useSession, signIn, signOut } from "next-auth/react"
+import type { Session } from "next-auth"
+// 👉 1. 记得引入 useState
+import { createContext, useContext, useEffect, useState, ReactNode } from "react"
 import { apiClient, setUnauthorizedHandler } from "@/lib/api"
+import { toast } from "sonner"
 
 interface AuthContextType {
-  user: any | null
+  user: {
+    id?: string
+    name?: string | null
+    email?: string | null
+    image?: string | null
+  } | null
   isAuthenticated: boolean
   isLoading: boolean
-  isAuthModalOpen: boolean
-  authModalView: "login" | "register"
-  showAuthModal: (view?: "login" | "register") => void
-  hideAuthModal: () => void
   login: () => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
+  // 👉 2. 增加弹窗相关的类型定义
+  isAuthModalOpen: boolean
+  showAuthModal: () => void
+  hideAuthModal: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 function AuthProviderContent({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession()
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
-  const [authModalView, setAuthModalView] = useState<"login" | "register">("login")
 
+  // 👉 3. 增加弹窗的 State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const showAuthModal = () => setIsAuthModalOpen(true)
+  const hideAuthModal = () => setIsAuthModalOpen(false)
+
+  // accessToken 同步到 apiClient
   useEffect(() => {
     if (session?.accessToken) {
-      apiClient.setTokens(session.accessToken, session.refreshToken ?? "")
+      apiClient.setToken(session.accessToken)
     } else {
-      apiClient.clearTokens()
+      apiClient.clearToken()
     }
-  }, [session])
+  }, [session?.accessToken])
 
-  // 注册全局401处理器，当API返回401时自动打开登录弹窗
+  // 👉 4. 修改 401 拦截逻辑：不再强行 signOut 跳转，而是清空 token 并弹窗提醒
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      showAuthModal("login")
+      console.error("触发了 401 拦截！")
+      apiClient.clearToken()
+      toast.error("登录状态已过期，请重新登录")
+      showAuthModal() // 弹出你定制的 AuthModal
     })
     return () => setUnauthorizedHandler(null)
   }, [])
 
   const isLoading = status === "loading"
   const isAuthenticated = status === "authenticated"
-  const user = session?.user || null
-
-  const showAuthModal = (view: "login" | "register" = "login") => {
-    setAuthModalView(view)
-    setIsAuthModalOpen(true)
-  }
-
-  const hideAuthModal = () => {
-    setIsAuthModalOpen(false)
-  }
+  const user = session?.user ?? null
 
   const login = async () => {
-    showAuthModal("login")
+    await signIn("casdoor")
   }
 
-  const logout = () => {
-    signOut()
-    apiClient.clearTokens()
+  const logout = async () => {
+    apiClient.clearToken()
+    await signOut({ callbackUrl: "/" })
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        isLoading,
-        isAuthModalOpen,
-        authModalView,
-        showAuthModal,
-        hideAuthModal,
-        login,
-        logout,
-      }}
-    >
+    // 👉 5. 将弹窗状态和方法暴露出去
+    <AuthContext.Provider value={{
+      user, isAuthenticated, isLoading, login, logout,
+      isAuthModalOpen, showAuthModal, hideAuthModal
+    }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children, session }: { children: ReactNode; session: Session | null }) {
   return (
-    <SessionProvider>
+    <SessionProvider session={session}>
       <AuthProviderContent>{children}</AuthProviderContent>
     </SessionProvider>
   )

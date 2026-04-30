@@ -1,27 +1,24 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
-// 全局401处理器，由AuthProvider设置
+// 全局 401 处理器，由 AuthProvider 注册
 let globalUnauthorizedHandler: (() => void) | null = null
 
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   globalUnauthorizedHandler = handler
 }
 
+// ── 类型定义（与后端 schema.py 对齐）─────────────────────────────────────────
+
 export interface UserInput {
   message: string
   model?: string
   thread_id?: string
-  user_id?: string
+  // user_id 已删除：后端从 JWT sub 字段自动取
   agent_config?: Record<string, unknown>
 }
 
 export interface StreamInput extends UserInput {
   stream_tokens?: boolean
-}
-
-export interface StreamEvent {
-  type: 'message' | 'token' | 'error'
-  content: ChatMessage | string
 }
 
 export interface ChatMessage {
@@ -34,21 +31,9 @@ export interface ChatMessage {
   custom_data?: Record<string, unknown>
 }
 
-export interface TokenResponse {
-  access_token: string
-  refresh_token: string
-  token_type: string
-  expires_in: number
-}
-
-export interface UserResponse {
-  id: string
-  username: string
-  email: string
-  is_active: boolean
-  is_superuser: boolean
-  created_at: string
-  roles: string[]
+export interface StreamEvent {
+  type: "message" | "token" | "error"
+  content: ChatMessage | string
 }
 
 export interface AgentInfo {
@@ -63,58 +48,57 @@ export interface ServiceMetadata {
   default_model: string
 }
 
-export interface CourseResponse {
-  id: string
-  title: string
-  description: string
-  price: string
-  tag: string
-  created_at: string
+export interface Feedback {
+  run_id: string
+  key: string
+  score: number                        // 0.0 ~ 1.0
+  kwargs?: Record<string, unknown>
 }
 
-export interface CourseListResponse {
-  total: number
-  items: CourseResponse[]
-  skip: number
-  limit: number
+export interface ChatHistoryInput {
+  thread_id: string
 }
+
+export interface ChatHistory {
+  messages: ChatMessage[]
+}
+
+// ── ApiClient ─────────────────────────────────────────────────────────────────
 
 class ApiClient {
   private baseUrl: string
   private accessToken: string | null = null
-  private refreshToken: string | null = null
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl
   }
 
-  setTokens(accessToken: string, refreshToken: string): void {
+  setToken(accessToken: string): void {
     this.accessToken = accessToken
-    this.refreshToken = refreshToken
   }
 
-  clearTokens(): void {
+  clearToken(): void {
     this.accessToken = null
-    this.refreshToken = null
+  }
+
+  private buildHeaders(extra: Record<string, string> = {}): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...extra,
+    }
+    if (this.accessToken) {
+      headers["Authorization"] = `Bearer ${this.accessToken}`
+    }
+    return headers
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...((options.headers as Record<string, string>) || {}),
-    }
-
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`
-    }
-
-    const response = await fetch(url, {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
-      headers,
+      headers: this.buildHeaders(options.headers as Record<string, string>),
     })
 
     if (response.status === 401) {
@@ -130,18 +114,14 @@ class ApiClient {
     return response.json()
   }
 
+  // ── 后端现有接口 ────────────────────────────────────────────────────────────
+
+  /** GET /api/agent/info — 获取服务元数据 */
   async getInfo(): Promise<ServiceMetadata> {
-    return this.request<ServiceMetadata>("/info")
+    return this.request<ServiceMetadata>("/api/agent/info")
   }
 
-  async getMe(): Promise<UserResponse> {
-    return this.request<UserResponse>("/auth/me")
-  }
-
-  async getCourses(): Promise<CourseListResponse> {
-    return this.request<CourseListResponse>("/courses/")
-  }
-
+  /** POST /api/agent/{agentId}/invoke — 同步对话 */
   async invoke(
     input: UserInput,
     agentId: string = "rag-assistant"
@@ -152,24 +132,35 @@ class ApiClient {
     })
   }
 
+  /** POST /api/agent/feedback — 提交反馈 */
+  async feedback(input: Feedback): Promise<void> {
+    return this.request<void>("/api/agent/feedback", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  }
+
+  /** POST /api/agent/history — 获取会话历史 */
+  async history(input: ChatHistoryInput): Promise<ChatHistory> {
+    return this.request<ChatHistory>("/api/agent/history", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  }
+
+  /** POST /api/agent/{agentId}/stream — SSE 流式对话 */
   async *stream(
     input: StreamInput,
     agentId: string = "rag-assistant"
   ): AsyncGenerator<StreamEvent, void, unknown> {
-    const url = `${this.baseUrl}/api/agent/${agentId}/stream`
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    }
-
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`
-    }
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input),
-    })
+    const response = await fetch(
+      `${this.baseUrl}/api/agent/${agentId}/stream`,
+      {
+        method: "POST",
+        headers: this.buildHeaders(),
+        body: JSON.stringify(input),
+      }
+    )
 
     if (response.status === 401) {
       globalUnauthorizedHandler?.()
@@ -181,9 +172,7 @@ class ApiClient {
     }
 
     const reader = response.body?.getReader()
-    if (!reader) {
-      throw new Error("No response body")
-    }
+    if (!reader) throw new Error("No response body")
 
     const decoder = new TextDecoder()
     let buffer = ""
@@ -198,22 +187,21 @@ class ApiClient {
         buffer = lines.pop() || ""
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6)
-            if (data === "[DONE]") {
-              return
+          if (!line.startsWith("data: ")) continue
+          const data = line.slice(6)
+          if (data === "[DONE]") return
+
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.type === "message" && parsed.content) {
+              yield { type: "message", content: parsed.content } as StreamEvent
+            } else if (parsed.type === "token" && parsed.content) {
+              yield { type: "token", content: parsed.content } as StreamEvent
+            } else if (parsed.type === "error") {
+              yield { type: "error", content: parsed.content } as StreamEvent
             }
-            try {
-              const parsed = JSON.parse(data)
-              if (parsed.type === "message" && parsed.content) {
-                yield { type: 'message', content: parsed.content } as StreamEvent
-              } else if (parsed.type === "token" && parsed.content) {
-                yield { type: 'token', content: parsed.content } as StreamEvent
-              } else if (parsed.type === "error") {
-                yield { type: 'error', content: parsed.content } as StreamEvent
-              }
-            } catch {
-            }
+          } catch {
+            // 跳过无法解析的行
           }
         }
       }

@@ -9,20 +9,17 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
-
 from langchain_core._api import LangChainBetaWarning
 from langchain_core.messages import AIMessage, AIMessageChunk, AnyMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-
-from uuid_utils import uuid7
 from langfuse import Langfuse  # type: ignore[import-untyped]
 from langfuse.langchain import CallbackHandler  # type: ignore[import-untyped]
-
 from langgraph.types import Command, Interrupt
+from uuid_utils import uuid7
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info
+from api.deps import CurrentUser                  # ← 引入
 from core import settings
-
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -44,11 +41,11 @@ logger = logging.getLogger("uvicorn")
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    """Generate idiomatic operation IDs for OpenAPI client generation."""
     return route.name
 
 
 router = APIRouter(prefix="/api/agent", tags=["一个agent 相关接口"])
+
 
 @router.get("/info")
 async def info() -> ServiceMetadata:
@@ -62,10 +59,17 @@ async def info() -> ServiceMetadata:
     )
 
 
-async def _handle_input(user_input: UserInput, agent: AgentGraph) -> tuple[dict[str, Any], UUID]:
+async def _handle_input(
+    user_input: UserInput,
+    agent: AgentGraph,
+    current_user: dict,                           # ← 从 JWT payload 注入
+) -> tuple[dict[str, Any], UUID]:
     run_id = uuid7()
     thread_id = user_input.thread_id or str(uuid4())
-    user_id = user_input.user_id or str(uuid4())
+
+    # user_id 从 JWT sub 字段取，不信任前端传值
+    # sub 字段格式为 "org-name/username"，取完整值作为唯一标识
+    user_id = current_user.get("sub") or str(uuid4())
 
     configurable = {"thread_id": thread_id, "user_id": user_id}
     if user_input.model is not None:
@@ -73,8 +77,7 @@ async def _handle_input(user_input: UserInput, agent: AgentGraph) -> tuple[dict[
 
     callbacks: list[Any] = []
     if settings.LANGFUSE_TRACING:
-        langfuse_handler = CallbackHandler()
-        callbacks.append(langfuse_handler)
+        callbacks.append(CallbackHandler())
 
     if user_input.agent_config:
         reserved_keys = {"thread_id", "user_id", "model"}
@@ -102,22 +105,23 @@ async def _handle_input(user_input: UserInput, agent: AgentGraph) -> tuple[dict[
     else:
         input = {"messages": [HumanMessage(content=user_input.message)]}
 
-    kwargs = {
-        "input": input,
-        "config": config,
-    }
-
-    return kwargs, run_id
+    return {"input": input, "config": config}, run_id
 
 
 @router.post("/{agent_id}/invoke", operation_id="invoke_with_agent_id")
 @router.post("/invoke")
-async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMessage:
+async def invoke(
+    user_input: UserInput,
+    current_user: CurrentUser,                    # ← JWT payload 注入
+    agent_id: str = DEFAULT_AGENT,
+) -> ChatMessage:
     agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent)
+    kwargs, run_id = await _handle_input(user_input, agent, current_user)
 
     try:
-        response_events: list[tuple[str, Any]] = await agent.ainvoke(**kwargs, stream_mode=["updates", "values"])  # type: ignore # fmt: skip
+        response_events: list[tuple[str, Any]] = await agent.ainvoke(
+            **kwargs, stream_mode=["updates", "values"]
+        )  # type: ignore
         response_type, response = response_events[-1]
         if response_type == "values":
             output = langchain_to_chat_message(response["messages"][-1])
@@ -136,10 +140,12 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
 
 
 async def message_generator(
-    user_input: StreamInput, agent_id: str = DEFAULT_AGENT
+    user_input: StreamInput,
+    current_user: dict,                           # ← 从 stream() 传入
+    agent_id: str = DEFAULT_AGENT,
 ) -> AsyncGenerator[str, None]:
     agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent)
+    kwargs, run_id = await _handle_input(user_input, agent, current_user)
 
     try:
         async for stream_event in agent.astream(
@@ -147,12 +153,12 @@ async def message_generator(
         ):
             if not isinstance(stream_event, tuple):
                 continue
-            
+
             if len(stream_event) == 3:
                 _, stream_mode, event = stream_event
             else:
                 stream_mode, event = stream_event
-                
+
             new_messages = []
             if stream_mode == "updates":
                 for node, updates in event.items():
@@ -161,13 +167,13 @@ async def message_generator(
                         for interrupt in updates:
                             new_messages.append(AIMessage(content=interrupt.value))
                         continue
-                    
+
                     if node == "block_unsafe_content":
                         unsafe_msgs = updates.get("messages", [])
                         if unsafe_msgs:
                             unsafe_content = unsafe_msgs[-1].content
                             yield f"data: {json.dumps({'type': 'token', 'content': unsafe_content})}\n\n"
-                    
+
                     updates = updates or {}
                     update_messages = updates.get("messages", [])
                     if "supervisor" in node or "sub-agent" in node:
@@ -241,7 +247,7 @@ def _sse_response_example() -> dict[int | str, Any]:
             "description": "Server Sent Event Response",
             "content": {
                 "text/event-stream": {
-                    "example": "data: {'type': 'token', 'content': 'Hello'}\n\ndata: {'type': 'token', 'content': ' World'}\n\ndata: [DONE]\n\n",
+                    "example": "data: {'type': 'token', 'content': 'Hello'}\n\ndata: [DONE]\n\n",
                     "schema": {"type": "string"},
                 }
             },
@@ -256,9 +262,13 @@ def _sse_response_example() -> dict[int | str, Any]:
     operation_id="stream_with_agent_id",
 )
 @router.post("/stream", response_class=StreamingResponse, responses=_sse_response_example())
-async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> StreamingResponse:
+async def stream(
+    user_input: StreamInput,
+    current_user: CurrentUser,                    # ← JWT payload 注入
+    agent_id: str = DEFAULT_AGENT,
+) -> StreamingResponse:
     return StreamingResponse(
-        message_generator(user_input, agent_id),
+        message_generator(user_input, current_user, agent_id),   # ← 传入
         media_type="text/event-stream",
     )
 
@@ -268,13 +278,12 @@ async def feedback(feedback: Feedback) -> FeedbackResponse:
     try:
         langfuse = Langfuse()
         kwargs = feedback.kwargs or {}
-        
         langfuse.score(
             trace_id=str(feedback.run_id),
             name=feedback.key or "user_feedback",
             value=feedback.score,
             comment=kwargs.get("comment", ""),
-            **kwargs
+            **kwargs,
         )
         langfuse.flush()
         return FeedbackResponse()

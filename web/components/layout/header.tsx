@@ -26,30 +26,6 @@ export function Header() {
                 </nav>
                 <NotificationBanner />
             </div>
-
-            {/* <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-2">
-                {mounted && (
-                    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                        className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
-                        {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-                    </button>
-                )}
-                {isAuthenticated ? (
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground hidden md:inline">{user?.name || user?.email}</span>
-                        <button onClick={() => logout()}
-                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                            title="退出登录">
-                            <LogOut size={18} />
-                        </button>
-                    </div>
-                ) : (
-                    <Button variant="ghost" size="sm" onClick={() => showAuthModal("login")}
-                        className="text-muted-foreground hover:text-foreground">
-                        <UserCircle size={18} className="mr-1" /> 登录
-                    </Button>
-                )}
-            </div> */}
         </div>
     )
 }

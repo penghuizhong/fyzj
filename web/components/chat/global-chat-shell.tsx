@@ -20,7 +20,7 @@ export function GlobalChatShell() {
 
     const handleSend = async () => {
         if (!isAuthenticated) {
-            showAuthModal('login')
+            showAuthModal()
             return
         }
 
@@ -44,7 +44,12 @@ export function GlobalChatShell() {
                     // 3. 实时更新最后一条消息的内容（打字机效果）
                     setMessages(prev => {
                         const newMsgs = [...prev]
-                        newMsgs[newMsgs.length - 1].content = fullAIContent
+                        const lastIndex = newMsgs.length - 1
+                        // ✅ 正确做法：创建一个全新的消息对象替换掉原来的
+                        newMsgs[lastIndex] = {
+                            ...newMsgs[lastIndex],
+                            content: fullAIContent
+                        }
                         return newMsgs
                     })
                 }

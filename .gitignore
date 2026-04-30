@@ -10,6 +10,7 @@ Thumbs.db
 .idea/
 .ruff_cache/
 /node_modules/
+/.playwright-mcp/
 /playwright-report/
 /test-results/
 

@@ -9,9 +9,9 @@ Thumbs.db
 .vscode/
 .idea/
 .ruff_cache/
-node_modules/
-playwright-report/
-test-results/
+./node_modules/
+./playwright-report/
+./test-results/
 
 # ==========================================
 # 2. 前端项目忽略 (针对 web 目录)

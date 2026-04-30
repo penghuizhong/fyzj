@@ -19,6 +19,9 @@ from core import settings
 from core.postgres import get_postgres_saver, get_postgres_store
 from src.api.routers import agent, files_admin, vector_admin
 
+from fastapi import Depends
+from api.rate_limit import check_rate_limit
+
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 logger = logging.getLogger("uvicorn")
 
@@ -91,8 +94,11 @@ async def health_check():
 
 # ==============================================================================
 # 4. 注册子路由
-# 鉴权由各路由函数内的 CurrentUser 依赖承担，此处无需 dependencies
+# 鉴权由各路由函数内的 CurrentUser 依赖承担，此处设置 global_dependencies 以实现全局限流
 # ==============================================================================
-app.include_router(agent.router)
-app.include_router(vector_admin.router)
-app.include_router(files_admin.router)
+
+global_dependencies = [Depends(check_rate_limit)]
+
+app.include_router(agent.router, dependencies=global_dependencies)
+app.include_router(vector_admin.router, dependencies=global_dependencies)
+app.include_router(files_admin.router, dependencies=global_dependencies)

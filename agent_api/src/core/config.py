@@ -59,14 +59,14 @@ class Settings(BaseSettings):
     POSTGRES_POOL_OPEN_TIMEOUT: int = 30
     POSTGRES_POOL_CLOSE_TIMEOUT: int = 10
     POSTGRES_POOL_MAX_IDLE_TIME: int = 300
-    POSTGRES_MIN_CONNECTIONS_PER_POOL: int = 1
-    POSTGRES_MAX_CONNECTIONS_PER_POOL: int = 3
+    POSTGRES_MIN_CONNECTIONS_PER_POOL: int = 5
+    POSTGRES_MAX_CONNECTIONS_PER_POOL: int = 30
 
     # ==========================================
     # 4. 基础设施：Redis 与 Celery
     # ==========================================
     REDIS_URL: str = "redis://localhost:6379/1"
-    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_MAX_CONNECTIONS: int = 100
     
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"

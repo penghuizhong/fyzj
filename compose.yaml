@@ -10,13 +10,15 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai # 同步国内时区
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-fyzj}
     ports:
-      - "5432:5432"
+      # 仅绑定到本机，防止公网暴露 (若完全不需要外部客户端直连，可直接删除 ports)
+      - "127.0.0.1:5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data # 使用命名卷
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - network
@@ -25,50 +27,68 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      # 防止日志撑爆磁盘
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # 2. Redis: 共享缓存
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
+    environment:
+      TZ: Asia/Shanghai # 同步国内时区
+    # 增加 requirepass 设置密码，提升安全性
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-redis123}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_data:/data # 使用命名卷
     networks:
       - network
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      # 增加密码验证以适配 healthcheck
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # 3. Casdoor: 身份鉴权总闸 (新增)
+  # 3. Casdoor: 身份鉴权总闸
   casdoor:
+    # 强烈建议将 latest 替换为具体版本，例如 v1.577.0
     image: casbin/casdoor:latest
     container_name: casdoor
-    restart: always
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000" # 如果前面有 Nginx，这里也可改为 "127.0.0.1:8000:8000"
     environment:
-      RUN_MODE: dev
+      TZ: Asia/Shanghai
+      RUN_MODE: ${RUN_MODE:-dev} # 提取到环境变量，上线时改为 prod
       driverName: postgres
-      # 关键：通过容器名 'postgres' 直连，并在同一个实例下创建名为 'casdoor' 的库
       dataSourceName: "user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} host=postgres port=5432 sslmode=disable dbname=casdoor"
     networks:
       - network
     depends_on:
       postgres:
-        condition: service_healthy # 只有数据库健康检查通过，才启动鉴权中心
+        condition: service_healthy
 
 # ── 共享网络 ──────────────────────────────────────────────────────
 networks:
   network:
-    name: network
+    name: network # 具名网络，方便其他微服务(如 Dify/FastAPI)通过名称加入
     driver: bridge
 
 # ── 持久化数据卷 ──────────────────────────────────────────────────
 volumes:
   postgres_data:
+    name: postgres_data
   redis_data:
+    name: redis_data

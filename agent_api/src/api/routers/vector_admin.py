@@ -1,34 +1,27 @@
-"""
-方圆智版 · 向量库后台管理 API (admin.py)
-实现知识库的完整 CRUD (增删改查) 与异步任务调度
-"""
+import json
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Annotated, AsyncGenerator
+
+import psycopg
+from psycopg import sql  # ✅ 引入 sql 模块，处理动态表名
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 from celery.result import AsyncResult
-import asyncpg
 
-from core.postgres import get_postgres_connection_string
 from tasks.agent_tasks import ingest_knowledge_base_task
 
 logger = logging.getLogger(__name__)
-
-# 建立专属 Router
 router = APIRouter(prefix="/api/vector-admin", tags=["Admin (向量库与任务)"])
 
-# =====================================================================
-# 🛠️ 辅助函数：确保异步数据库连接字符串正确
-# =====================================================================
-def get_async_pg_url() -> str:
-    """确保使用 asyncpg 驱动进行异步数据库操作"""
-    conn_str = get_postgres_connection_string()
-  
-    return conn_str
+# ── 依赖注入 ──────────────────────────────────────────────────────────
+async def get_admin_conn(request: Request) -> AsyncGenerator[psycopg.AsyncConnection, None]:
+    pool: AsyncConnectionPool = request.app.state.admin_pool
+    async with pool.connection() as conn:
+        yield conn
 
-
-# =====================================================================
-# 📚 数据模型定义
-# =====================================================================
+# ── 数据模型 ──────────────────────────────────────────────────────────
 class IngestRequest(BaseModel):
     directory_path: str
 
@@ -36,28 +29,26 @@ class DeleteDocumentRequest(BaseModel):
     table_name: str
     file_name: str
 
+# ── 工具函数 ──────────────────────────────────────────────────────────
+def _validate_table_name(table_name: str) -> str:
+    """仅做基础校验，防注入由 psycopg.sql.Identifier 负责"""
+    if not table_name.startswith("data_"):
+        raise HTTPException(status_code=400, detail="Invalid table name format. Must start with 'data_'")
+    return table_name
 
-# =====================================================================
-# 🟢 增 (CREATE) / 改 (UPDATE) - 异步入库
-# =====================================================================
+# ── 增/改：异步入库 ───────────────────────────────────────────────────
 @router.post("/ingest")
 async def trigger_ingestion(request: IngestRequest):
-    """
-    【增/改】接收入库请求，投递至 Celery
-    注意：在 LlamaIndex 配合正确 docstore 的情况下，针对同一目录的重复调用将触发 Upsert(增量更新)
-    """
     try:
         task = ingest_knowledge_base_task.delay(request.directory_path)
         logger.info(f"入库任务已投递，路径: {request.directory_path}, Task ID: {task.id}")
         return {"task_id": task.id, "status": "pending", "message": "任务已提交后台队列"}
     except Exception as e:
         logger.error(f"任务投递失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(status_code=500, detail="内部任务队列错误")
 
 @router.get("/task_status/{task_id}")
 async def get_task_status(task_id: str):
-    """供前台轮询入库任务进度"""
     try:
         task_result = AsyncResult(task_id)
         return {
@@ -68,132 +59,131 @@ async def get_task_status(task_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# =====================================================================
-# 🔴 删 (DELETE) - 物理清理向量表中的特定文档
-# =====================================================================
+# ── 删：物理清理向量切片 ───────────────────────────────────────────────
 @router.delete("/document")
-async def delete_document(request: DeleteDocumentRequest):
-    """
-    【删】根据文件名，物理删除特定向量表中的所有相关切片。
-    当本地文件被删除或需要强制覆盖更新时调用。
-    """
-    safe_table = request.table_name.replace('"', "").replace(";", "")
-    if not safe_table.startswith("data_"):
-        raise HTTPException(status_code=400, detail="Invalid table name")
-
+async def delete_document(
+    request: Annotated[DeleteDocumentRequest, Body()],
+    conn: psycopg.AsyncConnection = Depends(get_admin_conn),
+):
+    safe_table = _validate_table_name(request.table_name)
     if not request.file_name:
         raise HTTPException(status_code=400, detail="file_name cannot be empty")
 
     try:
-        conn = await asyncpg.connect(get_async_pg_url())
-        try:
-            # 根据 metadata 中的 file_name 字段精准狙击并删除该文档的所有 Chunk
-            delete_sql = f"""
-                DELETE FROM "{safe_table}" 
-                WHERE metadata_->>'file_name' = $1
-            """
-            result = await conn.execute(delete_sql, request.file_name)
+        async with conn.cursor() as cur:
+            # ✅ 使用 psycopg.sql 构建安全查询
+            query = sql.SQL("DELETE FROM {} WHERE metadata_->>%s = %s").format(
+                sql.Identifier(safe_table)
+            )
+            await cur.execute(query, ("file_name", request.file_name))
+            deleted_count = cur.rowcount
             
-            # execute 返回的 result 格式类似 "DELETE 15" (删除了15条切片)
-            deleted_count = int(result.split(" ")[1]) if result.startswith("DELETE") else 0
-            
-            logger.info(f"已从表 {safe_table} 中删除文件 {request.file_name} 的 {deleted_count} 条切片。")
-            return {
-                "status": "success", 
-                "message": f"成功删除 {deleted_count} 条关联切片",
-                "deleted_chunks": deleted_count
-            }
-        finally:
-            await conn.close()
+        logger.info(f"已从表 {safe_table} 删除文件 {request.file_name} 的 {deleted_count} 条切片")
+        return {
+            "status": "success",
+            "message": f"成功删除 {deleted_count} 条关联切片",
+            "deleted_chunks": deleted_count,
+        }
     except Exception as e:
         logger.error(f"删除文档切片失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="数据库删除操作失败")
 
-
-# =====================================================================
-# 🔵 查 (READ) - 获取表与切片数据
-# =====================================================================
+# ── 查：获取所有向量表 ─────────────────────────────────────────────────
 @router.get("/tables")
-async def get_vector_tables():
-    """【查】获取所有向量表"""
+async def get_vector_tables(
+    conn: psycopg.AsyncConnection = Depends(get_admin_conn),
+):
     try:
-        conn = await asyncpg.connect(get_async_pg_url())
-        try:
-            records = await conn.fetch(
-                "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'data_%'"
+        async with conn.cursor() as cur:
+            # 基础系统表查询，不需要动态拼接，直接用普通字串即可
+            await cur.execute(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname='public' AND tablename LIKE 'data_%'"
             )
-            return {"tables": [r["tablename"] for r in records]}
-        finally:
-            await conn.close()
+            rows = await cur.fetchall()
+        # default fetchall() returns list of tuples: [('data_1',), ('data_2',)]
+        return {"tables": [r[0] for r in rows]} 
     except Exception as e:
         logger.error(f"获取向量表失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="获取表列表失败")
 
-
+# ── 查：切片浏览器（分页 + 关键词检索）────────────────────────────────
 @router.get("/chunks")
-async def get_chunks(table_name: str, search: str = "", limit: int = 10, offset: int = 0):
-    """【查】供切片浏览器调用的数据接口，支持分页与关键词检索"""
-    safe_table = table_name.replace('"', "").replace(";", "")
-    if not safe_table.startswith("data_"):
-        raise HTTPException(status_code=400, detail="Invalid table name")
+async def get_chunks(
+    table_name: str,
+    search: str = "",
+    limit: int = 10,
+    offset: int = 0,
+    conn: psycopg.AsyncConnection = Depends(get_admin_conn),
+):
+    safe_table = _validate_table_name(table_name)
 
     try:
-        conn = await asyncpg.connect(get_async_pg_url())
-        try:
-            total = await conn.fetchval(f'SELECT COUNT(*) FROM "{safe_table}"') or 0
-            avg_len = await conn.fetchval(f'SELECT AVG(LENGTH(text)) FROM "{safe_table}"') or 0
-            max_len = await conn.fetchval(f'SELECT MAX(LENGTH(text)) FROM "{safe_table}"') or 0
+        async with conn.cursor(row_factory=dict_row) as cur:
+            # ✅ 优化 1：合并总数与统计信息的查询，减少一次 DB round-trip
+            stat_query = sql.SQL(
+                "SELECT COUNT(*) AS n, AVG(LENGTH(text)) AS a, MAX(LENGTH(text)) AS m FROM {}"
+            ).format(sql.Identifier(safe_table))
+            
+            await cur.execute(stat_query)
+            stat = await cur.fetchone()
+            
+            total = stat["n"] or 0
+            avg_len = stat["a"] or 0
+            max_len = stat["m"] or 0
 
+            # ✅ 优化 2：根据是否有 search 进行不同逻辑，且全面使用 sql.SQL 防注入
             if search:
-                count_query = f'SELECT COUNT(*) FROM "{safe_table}" WHERE text ILIKE $1'
-                total_filtered = await conn.fetchval(count_query, f"%{search}%") or 0
-                rows = await conn.fetch(
-                    f'SELECT id, text, metadata_ FROM "{safe_table}" WHERE text ILIKE $1 ORDER BY id ASC LIMIT $2 OFFSET $3',
-                    f"%{search}%",
-                    limit,
-                    offset,
-                )
+                count_filtered_query = sql.SQL(
+                    "SELECT COUNT(*) AS n FROM {} WHERE text ILIKE %s"
+                ).format(sql.Identifier(safe_table))
+                await cur.execute(count_filtered_query, (f"%{search}%",))
+                total_filtered = (await cur.fetchone())["n"] or 0
+
+                fetch_query = sql.SQL(
+                    "SELECT id, text, metadata_ FROM {} WHERE text ILIKE %s ORDER BY id ASC LIMIT %s OFFSET %s"
+                ).format(sql.Identifier(safe_table))
+                await cur.execute(fetch_query, (f"%{search}%", limit, offset))
             else:
                 total_filtered = total
-                rows = await conn.fetch(
-                    f'SELECT id, text, metadata_ FROM "{safe_table}" ORDER BY id ASC LIMIT $1 OFFSET $2',
-                    limit,
-                    offset,
-                )
+                fetch_query = sql.SQL(
+                    "SELECT id, text, metadata_ FROM {} ORDER BY id ASC LIMIT %s OFFSET %s"
+                ).format(sql.Identifier(safe_table))
+                await cur.execute(fetch_query, (limit, offset))
 
-            chunks = []
-            import json
-            for r in rows:
-                meta = r.get("metadata_") or "{}"
-                if isinstance(meta, str):
-                    try:
-                        meta = json.loads(meta)
-                    except:
-                        meta = {}
-                txt = r.get("text", "")
-                chunks.append(
-                    {
-                        "id": str(r.get("id")),
-                        "text": txt,
-                        "token_est": max(1, len(txt) // 2),
-                        "char_len": len(txt),
-                        "source": meta.get("file_name") or "未知",
-                        "page": meta.get("page_label") or "—",
-                    }
-                )
+            rows = await cur.fetchall()
 
-            return {
-                "chunks": chunks,
-                "total_filtered": int(total_filtered),
-                "stats": {
-                    "total": int(total),
-                    "avg_tok": max(1, int(avg_len) // 2),
-                    "max_tok": max(1, int(max_len) // 2),
-                },
-            }
-        finally:
-            await conn.close()
+        chunks = []
+        for r in rows:
+            meta = r.get("metadata_") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+            
+            txt = r.get("text", "")
+            chunks.append({
+                "id": str(r.get("id")),
+                "text": txt,
+                "token_est": max(1, len(txt) // 2),
+                "char_len": len(txt),
+                "source": meta.get("file_name", "未知"),
+                "page": meta.get("page_label", "—"),
+            })
+
+        return {
+            "chunks": chunks,
+            "total_filtered": int(total_filtered),
+            "stats": {
+                "total": int(total),
+                "avg_tok": max(1, int(avg_len) // 2),
+                "max_tok": max(1, int(max_len) // 2),
+            },
+        }
+    except psycopg.errors.UndefinedTable:
+        # 专门捕获表不存在的错误，返回更友好的 404
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
     except Exception as e:
         logger.error(f"获取切片数据失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="读取切片数据异常")

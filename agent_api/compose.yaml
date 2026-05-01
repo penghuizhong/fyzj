@@ -3,6 +3,22 @@ services:
   ai_server:
     build: .
     container_name: ai-server
+    restart: unless-stopped # 添加
+    healthcheck:
+      # 添加
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     env_file: [ .env ]
     environment:
       POSTGRES_HOST: postgres
@@ -19,6 +35,7 @@ services:
   celery_worker:
     build: .
     container_name: celery-worker
+    restart: unless-stopped
     env_file: [ .env ]
     environment:
       POSTGRES_HOST: postgres

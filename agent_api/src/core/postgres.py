@@ -64,11 +64,9 @@ async def get_postgres_saver():
         4. 设置检查点表
     """
     validate_postgres_config()
-    # 处理POSTGRES_APPLICATION_NAME可能为None的情况
-    base_app_name = settings.POSTGRES_APPLICATION_NAME or "agent_service"
-    application_name = f"{base_app_name}-saver"
+    application_name = settings.POSTGRES_APPLICATION_NAME + "-" + "saver"
 
-    pool = AsyncConnectionPool(
+    async with AsyncConnectionPool(
         conninfo=get_postgres_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
@@ -80,13 +78,11 @@ async def get_postgres_saver():
             "application_name": application_name,
             "connect_timeout": 10,
         },
-    )
-    try:
+        check=AsyncConnectionPool.check_connection,
+    ) as pool:
         checkpointer = AsyncPostgresSaver(pool)
         await checkpointer.setup()
         yield checkpointer
-    finally:
-        await pool.close()
 
 
 @asynccontextmanager
@@ -104,11 +100,9 @@ async def get_postgres_store():
         4. 设置存储表
     """
     validate_postgres_config()
-    # 处理POSTGRES_APPLICATION_NAME可能为None的情况
-    base_app_name = settings.POSTGRES_APPLICATION_NAME or "agent_service"
-    application_name = f"{base_app_name}-store"
+    application_name = settings.POSTGRES_APPLICATION_NAME + "-" + "saver"
 
-    pool = AsyncConnectionPool(
+    async with AsyncConnectionPool(
         conninfo=get_postgres_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
@@ -120,10 +114,33 @@ async def get_postgres_store():
             "application_name": application_name,
             "connect_timeout": 10,
         },
-    )
-    try:
+        check=AsyncConnectionPool.check_connection,
+    ) as pool:
         store = AsyncPostgresStore(pool)
         await store.setup()
         yield store
-    finally:
-        await pool.close()
+    
+@asynccontextmanager
+async def create_admin_pool():
+    """
+    为 vector_admin 创建独立的长生命周期连接池。
+    与 saver/store 的池隔离，避免互相争抢连接。
+    """
+    validate_postgres_config()
+    base_app_name = settings.POSTGRES_APPLICATION_NAME or "agent_service"
+
+    async with AsyncConnectionPool(
+        conninfo=get_postgres_connection_string(),
+        min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
+        max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
+        timeout=settings.POSTGRES_POOL_OPEN_TIMEOUT,
+        max_idle=settings.POSTGRES_POOL_MAX_IDLE_TIME,
+        kwargs={
+            "autocommit": True,
+            "row_factory": dict_row,
+            "application_name": f"{base_app_name}-vector_admin",
+            "connect_timeout": 10,
+        },
+    ) as pool:
+        yield pool
+ 

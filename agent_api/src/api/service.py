@@ -16,7 +16,7 @@ from langfuse import Langfuse
 from agents import get_agent, get_all_agent_info, load_agent
 from api.deps import get_jwks_client           # JWKS 预热
 from core import settings
-from core.postgres import get_postgres_saver, get_postgres_store
+from core.postgres import get_postgres_saver, get_postgres_store, create_admin_pool
 from src.api.routers import agent, files_admin, vector_admin
 
 from fastapi import Depends
@@ -37,12 +37,12 @@ async def lifespan(app: FastAPI):
     get_jwks_client()
 
     try:
-        async with get_postgres_saver() as saver, get_postgres_store() as store:
-            if hasattr(saver, "setup"):
-                await saver.setup()
-            if hasattr(store, "setup"):
-                await store.setup()
-
+        async with (
+            get_postgres_saver() as saver,
+            get_postgres_store() as store,
+            create_admin_pool() as admin_pool,   # ✅ admin 池加入同一个 async with 块
+        ):
+            # saver/store 内部已调用 setup()，此处无需重复
             for a in get_all_agent_info():
                 try:
                     await load_agent(a.key)
@@ -52,7 +52,10 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Agent {a.key} 已成功挂载记忆体")
                 except Exception as e:
                     logger.error(f"Failed to load agent {a.key}: {e}")
-            yield
+
+            app.state.admin_pool = admin_pool    # ✅ 挂载到 app.state 供依赖注入使用
+
+            yield    
     except Exception as e:
         logger.error(f"Error during initialization: {e}")
         raise

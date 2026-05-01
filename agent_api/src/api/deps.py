@@ -10,6 +10,13 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
+# 明确导入所有需要的异常类
+from jwt.exceptions import (
+    PyJWKClientError,
+    InvalidAudienceError,
+    ExpiredSignatureError,
+    InvalidTokenError
+)
 
 from core import settings
 
@@ -64,13 +71,31 @@ def verify_bearer(
                 audience=settings.CASDOOR_CLIENT_ID or None,
             )
             return payload
-        except jwt.ExpiredSignatureError:
+        
+        except PyJWKClientError as e:
+            # 【新增】精准捕获 JWKS 拉取失败，说明 CASDOOR_JWKS_URL 有误或服务不可达
+            logger.error(f"❌ 无法从 Casdoor 获取 JWK 公钥 (请检查 JWKS_URL): {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="鉴权服务通信异常：无法获取公钥",
+            )
+        except InvalidAudienceError as e:
+            # 【新增】精准捕获 Audience 校验失败，说明 CASDOOR_CLIENT_ID 填错了
+            logger.error(f"❌ JWT Audience 不匹配 (请检查 CASDOOR_CLIENT_ID): {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"无效的客户端 ID: {e}", # 开发期可以把 {e} 抛出方便调试
+            )
+        except ExpiredSignatureError:
+            # 优化了这里的日志文案
+            logger.info("⚠️ 拦截请求：Token 已过期") 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token 已过期",
             )
-        except jwt.InvalidTokenError as e:
-            logger.warning(f"🛡️ JWT 拦截非法请求: {e}")
+        except InvalidTokenError as e:
+            # 兜底捕获其他 JWT 错误（如签名被篡改、格式错乱等）
+            logger.warning(f"🛡️ JWT 拦截非法请求 (签名无效或被篡改): {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="令牌无效或遭篡改",
@@ -87,6 +112,13 @@ def verify_bearer(
                 detail="Invalid Secret Token",
             )
         return {"sub": "admin", "auth_mode": "secret"}
+    
+    # 生产环境必须配置认证，不允许匿名
+    if settings.MODE == "production":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Production mode requires authentication configuration"
+        )
 
     # ── 兜底：未配置任何鉴权（仅开发环境）──────────────────────────────────
     logger.warning("⚠️ 未配置鉴权，以匿名模式放行（请勿在生产环境使用）")

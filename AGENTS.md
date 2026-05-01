@@ -77,14 +77,17 @@ DEEPSEEK_API_KEY=...
 DASHSCOPE_API_KEY=...
 POSTGRES_PASSWORD=...
 
-# JWT (RS256 public key for verification)
-JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n..."
+# JWT (RS256 - verification only, issued by Casdoor)
 JWT_ALGORITHM=RS256
+CASDOOR_JWKS_URL=http://casdoor:8000/.well-known/jwks
 
 # Redis (strict DB isolation)
 REDIS_URL=redis://redis:6379/1
 CELERY_BROKER_URL=redis://redis:6379/1
 CELERY_RESULT_BACKEND=redis://redis:6379/2
+
+# CORS (Next.js frontend)
+CORS_ORIGINS=http://localhost:3000
 ```
 
 ### 3. Web Frontend (`web/`)
@@ -92,13 +95,16 @@ CELERY_RESULT_BACKEND=redis://redis:6379/2
 - **Stack**: Next.js 16 + React 19 + TypeScript
 - **Styling**: Tailwind CSS v4 + Geist font
 - **State**: Zustand
+- **Auth**: Next-Auth 5 (beta) + Casdoor
 - **Testing**: Vitest + React Testing Library + jsdom
 - **Package Manager**: pnpm
 - **Key Files**:
   - `app/page.tsx`: Main page
   - `app/layout.tsx`: Root layout with providers
   - `components/`: UI components
+  - `auth.ts`: Next-Auth configuration with Casdoor
   - `vitest.config.ts`: Test config with `@` alias
+  - `vitest.setup.ts`: Test setup (jest-dom matchers)
 
 ### 4. Streamlit Admin (`streamlit_web/`)
 - **Port**: 8501
@@ -171,8 +177,9 @@ Create it once: `docker network create network`
 ### Authentication
 - **Method**: RS256 JWT (public key verification only)
 - **Issuer**: Casdoor (port 8000)
-- **Agent API**: Only validates tokens, never issues them
-- Public key must be single-line in `.env` with `\n` for newlines
+- **Agent API**: Only validates tokens via JWKS endpoint, never issues them
+- JWKS URL: `http://casdoor:8000/.well-known/jwks`
+- Frontend: Next-Auth 5 with Casdoor provider
 
 ## Important File Locations
 
@@ -210,13 +217,17 @@ postgres-init/
 - Verify `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` use different DBs
 
 **JWT verification fails**:
-- Ensure `JWT_PUBLIC_KEY` is single-line with `\n` escaping
-- Verify algorithm is `RS256` (not HS256)
-- Check token was issued by Casdoor (port 8000)
+- Ensure `JWT_ALGORITHM=RS256` (not HS256)
+- Check `CASDOOR_JWKS_URL` is reachable from the API container
+- Verify token was issued by Casdoor (port 8000)
 
 **Module import errors in Docker**:
 - `PYTHONPATH` is set to `/app/src:/app` in Dockerfile
 - All imports should be absolute from `src/` (e.g., `from core import settings`)
+
+**Frontend auth errors**:
+- Copy `web/.env.example` to `web/.env` and update Casdoor client credentials
+- Ensure `NEXTAUTH_URL` matches the frontend port (3000)
 
 ## Testing
 

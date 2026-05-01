@@ -26,6 +26,14 @@ web/dist/
 web/coverage/
 web/.cache/
 web/*.tsbuildinfo
+web/*.log
+web/.DS_Store
+web/
+web/.env
+web/.env.local
+web/.env.*.local
+!web/.env.example
+
 
 # 前端环境变量（保护您的敏感配置）
 web/.env
@@ -34,28 +42,28 @@ web/.env.*.local
 !web/.env.example
 
 # ==========================================
-# 3. 后端项目忽略 (针对 api 目录)
+# 3. 后端项目忽略 (针对 agent_api 目录)
 # ==========================================
-api/venv/
-api/env/
-api/.venv/
-api/__pycache__/
-api/**/*.py[cod]
-api/**/*.py.class
-api/.pytest_cache/
-api/.coverage
-api/htmlcov/
+agent_api/venv/
+agent_api/env/
+agent_api/.venv/
+agent_api/__pycache__/
+agent_api/**/*.py[cod]
+agent_api/**/*.py.class
+agent_api/.pytest_cache/
+agent_api/.coverage
+agent_api/htmlcov/
 
 # 数据库文件 (防止把本地测试数据传上去)
-api/*.db
-api/*.sqlite
-api/*.sqlite3
+agent_api/*.db
+agent_api/*.sqlite
+agent_api/*.sqlite3
 
 # 上传的媒体文件
-api/uploads/
-api/media/
+agent_api/uploads/
+agent_api/media/
 
 # 后端环境变量
-api/.env
-api/.env.*
-!api/.env.example
+agent_api/.env
+agent_api/.env.*
+!agent_api/.env.example

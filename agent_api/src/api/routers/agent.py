@@ -18,8 +18,10 @@ from langgraph.types import Command, Interrupt
 from uuid_utils import uuid7
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info
-from api.deps import CurrentUser                  # ← 引入
+from api.deps import CurrentUser
 from core import settings
+# ✅ 引入 cache：只用到 cached 装饰器 + cache_delete（history 写后失效）
+from core.cache import cached, cache_delete, cache_key
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -39,15 +41,22 @@ from api.utils import (
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 logger = logging.getLogger("uvicorn")
 
+router = APIRouter(prefix="/api/agent", tags=["一个agent 相关接口"])
+
 
 def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
 
-router = APIRouter(prefix="/api/agent", tags=["一个agent 相关接口"])
-
-
+# ---------------------------------------------------------------------------
+# ✅ 缓存点 1：/info
+#
+# 理由：agent 列表 + 可用模型列表均为启动时加载的静态数据，
+#       每次请求都重新计算 list(settings.AVAILABLE_MODELS) + sort() 毫无意义。
+#       TTL 设 600s（10分钟），重启服务时缓存自然失效。
+# ---------------------------------------------------------------------------
 @router.get("/info")
+@cached(ttl=600, key_prefix="agent:info")
 async def info() -> ServiceMetadata:
     models = list(settings.AVAILABLE_MODELS)
     models.sort()
@@ -62,13 +71,11 @@ async def info() -> ServiceMetadata:
 async def _handle_input(
     user_input: UserInput,
     agent: AgentGraph,
-    current_user: dict,                           # ← 从 JWT payload 注入
+    current_user: dict,
 ) -> tuple[dict[str, Any], UUID]:
     run_id = uuid7()
     thread_id = user_input.thread_id or str(uuid4())
 
-    # user_id 从 JWT sub 字段取，不信任前端传值
-    # sub 字段格式为 "org-name/username"，取完整值作为唯一标识
     user_id = current_user.get("sub") or str(uuid4())
 
     configurable = {"thread_id": thread_id, "user_id": user_id}
@@ -112,7 +119,7 @@ async def _handle_input(
 @router.post("/invoke")
 async def invoke(
     user_input: UserInput,
-    current_user: CurrentUser,                    # ← JWT payload 注入
+    current_user: CurrentUser,
     agent_id: str = DEFAULT_AGENT,
 ) -> ChatMessage:
     agent: AgentGraph = get_agent(agent_id)
@@ -133,15 +140,24 @@ async def invoke(
             raise ValueError(f"Unexpected response type: {response_type}")
 
         output.run_id = str(run_id)
+
+        # ✅ invoke 完成后，使该 thread 的 history 缓存失效
+        # 下次 /history 请求将重新从 postgres 拉取最新消息
+        thread_id = user_input.thread_id
+        if thread_id:
+            await cache_delete(
+                cache_key("agent:history", thread_id)
+            )
+
         return output
     except Exception as e:
-        logger.error(f"An exception occurred: {e}")
+        logger.error("An exception occurred: %s", e)
         raise HTTPException(status_code=500, detail="Unexpected error")
 
 
 async def message_generator(
     user_input: StreamInput,
-    current_user: dict,                           # ← 从 stream() 传入
+    current_user: dict,
     agent_id: str = DEFAULT_AGENT,
 ) -> AsyncGenerator[str, None]:
     agent: AgentGraph = get_agent(agent_id)
@@ -209,7 +225,7 @@ async def message_generator(
                     chat_message = langchain_to_chat_message(message)
                     chat_message.run_id = str(run_id)
                 except Exception as e:
-                    logger.error(f"Error parsing message: {e}")
+                    logger.error("Error parsing message: %s", e)
                     yield f"data: {json.dumps({'type': 'error', 'content': 'Unexpected error'})}\n\n"
                     continue
                 if chat_message.type == "human" and chat_message.content == user_input.message:
@@ -228,9 +244,15 @@ async def message_generator(
                 if content:
                     yield f"data: {json.dumps({'type': 'token', 'content': convert_message_content_to_string(content)})}\n\n"
     except Exception as e:
-        logger.error(f"Error in message generator: {e}")
+        logger.error("Error in message generator: %s", e)
         yield f"data: {json.dumps({'type': 'error', 'content': 'Internal server error'})}\n\n"
     finally:
+        # ✅ stream 完成后同样使 history 缓存失效
+        thread_id = user_input.thread_id
+        if thread_id:
+            await cache_delete(
+                cache_key("agent:history", thread_id)
+            )
         yield "data: [DONE]\n\n"
 
 
@@ -264,11 +286,11 @@ def _sse_response_example() -> dict[int | str, Any]:
 @router.post("/stream", response_class=StreamingResponse, responses=_sse_response_example())
 async def stream(
     user_input: StreamInput,
-    current_user: CurrentUser,                    # ← JWT payload 注入
+    current_user: CurrentUser,
     agent_id: str = DEFAULT_AGENT,
 ) -> StreamingResponse:
     return StreamingResponse(
-        message_generator(user_input, current_user, agent_id),   # ← 传入
+        message_generator(user_input, current_user, agent_id),
         media_type="text/event-stream",
     )
 
@@ -288,21 +310,44 @@ async def feedback(feedback: Feedback) -> FeedbackResponse:
         langfuse.flush()
         return FeedbackResponse()
     except Exception as e:
-        logger.error(f"写入 Langfuse 评分时发生错误: {e}")
+        logger.error("写入 Langfuse 评分时发生错误: %s", e)
         return FeedbackResponse()
 
 
+# ---------------------------------------------------------------------------
+# ✅ 缓存点 2：/history
+#
+# 理由：同一 thread_id 的历史消息在会话进行中会被高频重复拉取（前端轮询/刷新）。
+#       每次都查 postgres 代价高，而消息只在 invoke/stream 后才会新增。
+#       TTL 设 120s（2分钟），invoke/stream 完成时主动 cache_delete 精确失效。
+# ---------------------------------------------------------------------------
 @router.post("/history")
 async def history(input: ChatHistoryInput) -> ChatHistory:
     agent: AgentGraph = get_agent(DEFAULT_AGENT)
+
+    history_cache_key = cache_key("agent:history", input.thread_id)
+
+    # 尝试读缓存
+    from core.cache import cache_get, cache_set
+    found, cached_history = await cache_get(history_cache_key)
+    if found:
+        logger.debug("History cache HIT [thread=%s]", input.thread_id)
+        return ChatHistory(**cached_history)
+
+    # 缓存未命中，查 postgres
     try:
         state_snapshot = await agent.aget_state(
             config=RunnableConfig(configurable={"thread_id": input.thread_id})
         )
-        logger.info(f"state_snapshot: {state_snapshot}")
         messages: list[AnyMessage] = state_snapshot.values["messages"]
         chat_messages: list[ChatMessage] = [langchain_to_chat_message(m) for m in messages]
-        return ChatHistory(messages=chat_messages)
+        result = ChatHistory(messages=chat_messages)
+
+        # 写入缓存（序列化为 dict）
+        await cache_set(history_cache_key, result.model_dump(), ttl=120)
+        logger.debug("History cache SET [thread=%s]", input.thread_id)
+
+        return result
     except Exception as e:
-        logger.error(f"An exception occurred: {e}")
+        logger.error("An exception occurred: %s", e)
         raise HTTPException(status_code=500, detail="Unexpected error")

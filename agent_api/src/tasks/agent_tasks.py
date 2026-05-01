@@ -8,7 +8,14 @@ from scripts.ingest import ingest_with_llama_index
 
 logger = logging.getLogger(__name__)
 
-@shared_task(bind=True, name="ingest_knowledge_base_task")
+@shared_task(
+    bind=True,
+    name="ingest_knowledge_base_task",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+    retry_jitter=True,
+)
 def ingest_knowledge_base_task(self, directory_path: str) -> dict:
     """
     后台异步入库任务：接收路径，执行向量化与写入数据库。

@@ -17,6 +17,7 @@ from agents import get_agent, get_all_agent_info, load_agent
 from api.deps import get_jwks_client           # JWKS 预热
 from core import settings
 from core.postgres import get_postgres_saver, get_postgres_store, create_admin_pool
+from core.redis import AsyncRedisPool, SyncRedisPool
 from src.api.routers import agent, files_admin, vector_admin
 
 from fastapi import Depends
@@ -35,6 +36,10 @@ async def lifespan(app: FastAPI):
     """资源预热：JWKS 公钥、数据库连接、Agent 插件"""
     # 预热 JWKS，避免首个请求冷启动去拉公钥
     get_jwks_client()
+    
+      # ✅ 新增：初始化 Redis 双池
+    await AsyncRedisPool.initialize()
+    SyncRedisPool.initialize()
 
     try:
         async with (
@@ -55,10 +60,17 @@ async def lifespan(app: FastAPI):
 
             app.state.admin_pool = admin_pool    # ✅ 挂载到 app.state 供依赖注入使用
 
-            yield    
+            yield   
+            
     except Exception as e:
         logger.error(f"Error during initialization: {e}")
         raise
+    
+    finally:
+    # ✅ 新增：优雅关闭
+        await AsyncRedisPool.close()
+        SyncRedisPool.close()
+        
 
 
 # ==============================================================================

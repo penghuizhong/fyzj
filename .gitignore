@@ -28,18 +28,14 @@ web/.cache/
 web/*.tsbuildinfo
 web/*.log
 web/.DS_Store
-web/
 web/.env
 web/.env.local
 web/.env.*.local
 !web/.env.example
 
+streamlit_web/.env
+!streamlit_web/.env.example
 
-# 前端环境变量（保护您的敏感配置）
-web/.env
-web/.env.local
-web/.env.*.local
-!web/.env.example
 
 # ==========================================
 # 3. 后端项目忽略 (针对 agent_api 目录)
